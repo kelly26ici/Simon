@@ -13,7 +13,7 @@ client = AsyncOpenAI(
 
 async def ask_gpt(history: list[dict]):
     response = await client.responses.create(
-        model="gpt-oss-120b",
+        model="openai/gpt-oss-120b",
         input=[
             {
                 "role": "system",
