@@ -29,4 +29,4 @@ async def ask_gpt(history: list[dict]):
         store=False,
     )
 
-    return responses
+    return response

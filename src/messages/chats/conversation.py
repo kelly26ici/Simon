@@ -10,16 +10,15 @@ def get_history(sender: str) -> list[dict]:
     return _conversations.setdefault(sender, [])
 
 
-def append_message(sender: str, role: str, content: str) -> None:
-
+def append_message(sender: str, role: str, content: str):
     history = get_history(sender)
 
     history.append(
         {
-            "type": "user_input" if role == "user" else "model_output",
+            "role": role,
             "content": [
                 {
-                    "type": "text",
+                    "type": "input_text" if role == "user" else "output_text",
                     "text": content,
                 }
             ],
@@ -28,7 +27,6 @@ def append_message(sender: str, role: str, content: str) -> None:
 
     if len(history) > MAX_HISTORY:
         _conversations[sender] = history[-MAX_HISTORY:]
-
 
 def append_interaction_steps(sender: str, steps) -> None:
     """
