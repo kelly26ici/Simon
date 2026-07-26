@@ -1,19 +1,32 @@
-# src/services/llm.py 
+# src/services/llm.py
 
-from google import genai
+from openai import AsyncOpenAI
 
 from src.configs.prompts import system_prompt
-from src.configs.settings import GEMINI_API_KEY
+from src.configs.settings import OPENAI_API_KEY
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = AsyncOpenAI(
+    api_key=OPENAI_API_KEY,
+	base_url="https://api.groq.com/openai/v1"
+)
 
 
-async def ask_gemini(history: list[dict]):
-    interaction = await client.aio.interactions.create(
-        model="gemini-3.1-pro",      
+async def ask_gpt(history: list[dict]):
+    response = await client.responses.create(
+        model="gpt-oss-120b",
+        input=[
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": system_prompt,
+                    }
+                ],
+            },
+            *history,
+        ],
         store=False,
-        system_instruction=system_prompt,
-        input=history,
     )
 
-    return interaction
+    return responses

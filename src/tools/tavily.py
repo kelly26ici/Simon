@@ -49,6 +49,6 @@ async def tavily_search(input: TavilyInput) -> dict:
     response=client.search(**params)
   
   except Exception as e:
-    print(f"Failed to seearch: {e}")
+    print(f"Failed to search: {e}")
   
   return response
