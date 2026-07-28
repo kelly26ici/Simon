@@ -1,25 +1,13 @@
-import asyncio
+import pytest
+from unittest.mock import AsyncMock, patch
+from src.services.llm import ask_gpt
 
-from src.services.llm import ask_gemini
+@pytest.mark.asyncio
+async def test_ask_gpt_basic():
+    mock_response = AsyncMock()
+    mock_response.output = []
+    mock_response.output_text = "Hello there!"
 
-exit_choices = ["exit", "quit"]
-
-
-async def main():
-    while True:
-        user_input = input("Kelly: ")
-        print()
-
-        if user_input.strip().lower() in exit_choices:
-            print("Goodbye")
-            break
-
-        if not user_input.strip():
-            continue
-
-        response = await ask_gemini(user_input)
-        print(f"Samantha: {response}\n")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    with patch("src.services.llm.client.responses.create", return_value=mock_response):
+        res = await ask_gpt([{"role": "user", "content": [{"type": "input_text", "text": "Hi"}]}])
+        assert res.output_text == "Hello there!"

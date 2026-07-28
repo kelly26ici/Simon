@@ -9,10 +9,11 @@ async def handle_text(sender: str, msg: dict) -> None:
     """Handles one incoming text message using THIS customer's own history."""
     user_text = msg["text"]["body"]
 
-    append_message(sender, "user", user_text)
-    reply = await ask_gpt(get_history(sender))  # full per-customer history, not just the raw string
+    await append_message(sender, "user", user_text)
+    history = await get_history(sender)
+    reply = await ask_gpt(history)  # full per-customer history, not just the raw string
     reply_text = reply.output_text
-    append_message(sender, "assistant", reply_text)
+    await append_message(sender, "assistant", reply_text)
 
     await send_whatsapp_message(sender, reply_text)
     

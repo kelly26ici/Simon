@@ -1,4 +1,4 @@
-# src/messages/validator.py 
+# src/messages/validator.py
 
 import hmac
 import hashlib
@@ -21,4 +21,3 @@ def verify_signature(payload: bytes, signature_header: str) -> bool:
     expected = hmac.new(META_APP_SECRET.encode(), payload, hashlib.sha256).hexdigest()
     received = signature_header.split("sha256=", 1)[1]
     return hmac.compare_digest(expected, received)
-    

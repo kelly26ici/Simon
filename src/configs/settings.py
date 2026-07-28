@@ -1,4 +1,4 @@
-# src/comfigs/settings.py
+# src/configs/settings.py
 
 import os 
 from dotenv import load_dotenv
@@ -16,7 +16,7 @@ load_dotenv()
 #======================================================
 
 
-OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY=os.getenv("GROQ_API_KEY")
 
 GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
 
@@ -67,6 +67,19 @@ SHORTCODE=os.getenv("SHORTCODE")
 
 CALLBACK_URL=os.getenv("CALLBACK_URL")
 
+MPESA_WEBHOOK_SECRET = os.getenv("MPESA_WEBHOOK_SECRET")
+
+
+#======================================================
+#                     REDIS
+#======================================================
+REDIS_URL=os.getenv("REDIS_URL", "redis://localhost:6379")
+
+#======================================================
+#                     SUPABASE
+#======================================================
+SUPABASE_URL=os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY=os.getenv("SUPABASE_KEY", "")
 
 #======================================================
 #                     TOOLS

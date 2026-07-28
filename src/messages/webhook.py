@@ -7,6 +7,9 @@ from fastapi import Response
 from src.messages.validator import verify_signature
 from src.messages.parser import parse_incoming
 from src.messages.router import dispatch
+from src.core.redis import RedisStore
+
+SeenMessages = RedisStore(prefix="seen_msg")
 
 
 async def process_webhook_event(body: bytes, signature_header: str) -> Response:
@@ -25,6 +28,14 @@ async def process_webhook_event(body: bytes, signature_header: str) -> Response:
     message = parse_incoming(data)
     if message is None:
         return Response(status_code=200)  # status update, not a message
+
+    msg_id = message.raw.get("id")
+    if msg_id:
+        if await SeenMessages.get(msg_id):
+            print(f"Duplicate message ignored: {msg_id}")
+            return Response(status_code=200)
+        await SeenMessages.set(msg_id, True, ex=3600)  # 1 hour expiry
+
 
     try:
         await dispatch(message)

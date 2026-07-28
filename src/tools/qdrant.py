@@ -11,7 +11,7 @@ async def check_if_collection_exists(collection_name) -> bool:
   collections= (await client.get_collections()).collections
   
   return any(collection.name == collection_name for collection in collections)
-  
+
 async def make_collection(collection_name):
   if not await check_if_collection_exists(collection_name):
     await client.create_collection(

@@ -1,17 +1,21 @@
 # src/messages/chats/conversations.py
 
 from src.configs.settings import MAX_HISTORY
+from src.core.redis import RedisStore
 
-_conversations: dict[str, list[dict]] = {}
+_conversations = RedisStore(prefix="history")
 
-
-def get_history(sender: str) -> list[dict]:
+async def get_history(sender: str) -> list[dict]:
     """Returns this customer's history list (creating it on first contact)."""
-    return _conversations.setdefault(sender, [])
+    history = await _conversations.get(sender)
+    if history is None:
+        history = []
+        await _conversations.set(sender, history)
+    return history
 
 
-def append_message(sender: str, role: str, content: str):
-    history = get_history(sender)
+async def append_message(sender: str, role: str, content: str):
+    history = await get_history(sender)
 
     history.append(
         {
@@ -26,15 +30,17 @@ def append_message(sender: str, role: str, content: str):
     )
 
     if len(history) > MAX_HISTORY:
-        _conversations[sender] = history[-MAX_HISTORY:]
+        history = history[-MAX_HISTORY:]
+    await _conversations.set(sender, history)
 
-def append_interaction_steps(sender: str, steps) -> None:
+
+async def append_interaction_steps(sender: str, steps) -> None:
     """
     Stores Gemini returned interaction steps without changing them.
     Needed later for tool calling/function calling support.
     """
 
-    history = get_history(sender)
+    history = await get_history(sender)
 
     history.extend(
         step.model_dump() if hasattr(step, "model_dump") else step
@@ -42,4 +48,5 @@ def append_interaction_steps(sender: str, steps) -> None:
     )
 
     if len(history) > MAX_HISTORY:
-        _conversations[sender] = history[-MAX_HISTORY:]
+        history = history[-MAX_HISTORY:]
+    await _conversations.set(sender, history)
