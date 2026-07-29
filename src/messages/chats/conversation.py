@@ -22,7 +22,7 @@ async def append_message(sender: str, role: str, content: str):
             "role": role,
             "content": [
                 {
-                    "type": "input_text" if role == "user" else "output_text",
+                    "type": "input_text" if role == "user" else "input_text",
                     "text": content,
                 }
             ],
