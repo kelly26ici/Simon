@@ -13,7 +13,7 @@ client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
 )
 
-MODEL_NAME = os.getenv("LLM_MODEL", "moonshot/kimi-k2.6:free")
+MODEL_NAME = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 
 
 async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
