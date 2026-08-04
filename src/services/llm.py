@@ -5,19 +5,19 @@ from openai import AsyncOpenAI
 from loguru import logger
 
 from src.configs.prompts import system_prompt
-from src.configs.settings import GROQ_API_KEY
+from src.configs.settings import GROQ_API_KEY, NVIDIA_API_KEY
 from src.tools.registry import registry
 
 client = AsyncOpenAI(
-    api_key=GROQ_API_KEY,
-    base_url="https://api.groq.com/openai/v1"
+    api_key=NVIDIA_API_KEY,
+    base_url="https://integrate.api.nvidia.com/v1"
 )
 
-MODEL_NAME = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
+MODEL_NAME = os.getenv("LLM_MODEL", "z-ai/glm-5.2")
 
 
 async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
-    """Sends conversation history to Groq Responses API with automatic tool execution."""
+    """Sends conversation history to NVIDIA      Responses API with automatic tool execution."""
     tools = registry.get_llm_declarations()
 
     input_items = [

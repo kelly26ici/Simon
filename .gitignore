@@ -140,3 +140,5 @@ cache/
 # All CODE
 # =====================
 all_python_code.txt
+tests/
+.continue/
