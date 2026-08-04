@@ -1,6 +1,6 @@
 # src/configs/settings.py
 
-import os 
+import os
 from dotenv import load_dotenv
 
 #======================================================
@@ -20,9 +20,12 @@ GROQ_API_KEY=os.getenv("GROQ_API_KEY")
 
 GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
 
+NVIDIA_API_KEY=os.getenv("NVIDIA_API_KEY")
+
+OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY")
 
 #======================================================
-#                    WHATSAPP 
+#                    WHATSAPP
 #======================================================
 
 
