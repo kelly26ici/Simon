@@ -31,7 +31,7 @@ async def send_typing_indicator(message_id: str) -> None:
     """Marks the inbound message as read and shows the typing bubble.
     Auto-dismisses after 25s or as soon as the actual reply is sent.
     """
-    url = f"{GRAPH_URL}/{PHONE_NUMBER_ID}/messages"
+    url = f"{META_GRAPH_BASE_URL}/{META_GRAPH_API_VERSION}/{META_PHONE_NUMBER_ID}/messages"
     payload = {
         "messaging_product": "whatsapp",
         "status": "read",
@@ -42,17 +42,3 @@ async def send_typing_indicator(message_id: str) -> None:
         resp = await client.post(url, headers=HEADERS, json=payload)
         resp.raise_for_status()# src/messages/sender.py
 
-async def send_typing_indicator(message_id: str) -> None:
-    """Marks the inbound message as read and shows the typing bubble.
-    Auto-dismisses after 25s or as soon as the actual reply is sent.
-    """
-    url = f"{GRAPH_URL}/{PHONE_NUMBER_ID}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "status": "read",
-        "message_id": message_id,
-        "typing_indicator": {"type": "text"},
-    }
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(url, headers=HEADERS, json=payload)
-        resp.raise_for_status()
