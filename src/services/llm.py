@@ -9,15 +9,15 @@ from src.configs.settings import NVIDIA_API_KEY, OPENROUTER_API_KEY
 from src.tools.registry import registry
 
 client = AsyncOpenAI(
-    api_key=NVIDIA_API_KEY,
-    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
 )
 
-MODEL_NAME = os.getenv("LLM_MODEL", "z-ai/glm-5.2")
+MODEL_NAME = os.getenv("LLM_MODEL", "deepseek/deepseek-v4-flash")
 
 
 async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
-    """Sends conversation history to NVIDIA Responses API with automatic tool execution."""
+    """Sends conversation history to OpenRouter Responses API with automatic tool execution."""
     tools = registry.get_llm_declarations()
 
     input_items = [
