@@ -1,8 +1,9 @@
-# src/messages/webhook.property
+# src/messages/webhook.py
 
 import json
 
 from fastapi import Response
+from loguru import logger
 
 from src.messages.validator import verify_signature
 from src.messages.parser import parse_incoming
@@ -20,7 +21,7 @@ async def process_webhook_event(body: bytes, signature_header: str) -> Response:
     which just re-triggers the same failure (or double-sends once it's fixed).
     """
     if not verify_signature(body, signature_header):
-        print("WARNING: signature verification failed")
+        logger.warning("Signature verification failed")
         return Response(status_code=403)
 
     data = json.loads(body)
@@ -32,15 +33,15 @@ async def process_webhook_event(body: bytes, signature_header: str) -> Response:
     msg_id = message.raw.get("id")
     if msg_id:
         if await SeenMessages.get(msg_id):
-            print(f"Duplicate message ignored: {msg_id}")
+            logger.debug("Duplicate message ignored: {}", msg_id)
             return Response(status_code=200)
         await SeenMessages.set(msg_id, True, ex=3600)  # 1 hour expiry
 
 
     try:
         await dispatch(message)
-    except Exception as e:
-        print(f"Error handling message from {message.sender}: {e}")
+    except Exception:
+        logger.exception("Error handling message from {}", message.sender)
 
     return Response(status_code=200)
     

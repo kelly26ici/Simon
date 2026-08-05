@@ -1,12 +1,9 @@
 """
-Maps CheckoutRequestID -> transaction state, so the async callback from
+Maps CheckoutRequestID → transaction state, so the async callback from
 Daraja can be matched back to the right conversation.
 
-This is an in-memory placeholder. Swap the guts for my existing Upstash
-Redis client (same one backing the rolling conversation buffer) so state
-survives restarts and works across more than one Render worker - right
-now a redeploy or a second worker process just loses every pending
-transaction.
+Backed by Redis (with in-memory fallback) so state survives restarts and
+works across multiple Render workers.
 """
 
 from __future__ import annotations

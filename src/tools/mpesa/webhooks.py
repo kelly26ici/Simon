@@ -12,6 +12,8 @@ not just this app-level check.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -30,6 +32,19 @@ def _check_secret(secret: str) -> None:
         raise HTTPException(status_code=404)
 
 
+async def _parse_json_body(request: Request) -> dict[str, Any]:
+    """Safely parse JSON from the request body, returning an empty dict on failure."""
+    try:
+        data = await request.json()
+    except Exception as e:
+        logger.warning("Failed to parse JSON body: {}", e)
+        return {}
+    if not isinstance(data, dict):
+        logger.warning("Expected JSON object in request body, got {}", type(data).__name__)
+        return {}
+    return data
+
+
 @router.post("/callback/{secret}")
 async def handle_stk_callback(secret: str, request: Request):
     """
@@ -40,7 +55,7 @@ async def handle_stk_callback(secret: str, request: Request):
     """
     _check_secret(secret)
 
-    callback_data = await request.json()
+    callback_data = await _parse_json_body(request)
     logger.info("STK callback: {}", callback_data)
 
     ack = JSONResponse(content={"ResultCode": 0, "ResultDesc": "Received"})
@@ -51,6 +66,15 @@ async def handle_stk_callback(secret: str, request: Request):
 
     if not checkout_request_id:
         logger.error("Callback missing CheckoutRequestID: {}", callback_data)
+        return ack
+
+    if result_code is None:
+        logger.error("Callback missing ResultCode: {}", callback_data)
+        await transaction_store.update(
+            checkout_request_id,
+            state=TransactionState.FAILED.value,
+            result_desc="Missing ResultCode in callback",
+        )
         return ack
 
     if result_code != 0:
@@ -86,7 +110,7 @@ async def handle_stk_callback(secret: str, request: Request):
 @router.post("/c2b/validation/{secret}")
 async def handle_c2b_validation(secret: str, request: Request):
     _check_secret(secret)
-    validation_data = await request.json()
+    validation_data = await _parse_json_body(request)
     logger.info("C2B validation payload: {}", validation_data)
     return JSONResponse(content={"ResultCode": 0, "ResultDesc": "Accepted"})
 
@@ -94,21 +118,29 @@ async def handle_c2b_validation(secret: str, request: Request):
 @router.post("/c2b/confirmation/{secret}")
 async def handle_c2b_confirmation(secret: str, request: Request):
     _check_secret(secret)
-    confirmation_data = await request.json()
+    confirmation_data = await _parse_json_body(request)
     logger.info("C2B confirmation payload: {}", confirmation_data)
 
-    parsed_metadata = {
-        "transaction_type": confirmation_data.get("TransactionType"),
-        "transaction_id": confirmation_data.get("TransID"),
-        "transaction_time": confirmation_data.get("TransTime"),
-        "amount": confirmation_data.get("TransAmount"),
-        "business_shortcode": confirmation_data.get("BusinessShortCode"),
-        "account_reference": confirmation_data.get("BillRefNumber"),
-        "invoice_number": confirmation_data.get("InvoiceNumber"),
-        "phone_number": confirmation_data.get("MSISDN"),
-        "first_name": confirmation_data.get("FirstName"),
-    }
-    logger.info("Parsed C2B record: {}", parsed_metadata)
+    trans_id = confirmation_data.get("TransID")
+    if not trans_id:
+        logger.warning("C2B confirmation missing TransID: {}", confirmation_data)
+        return JSONResponse(content={"ResultCode": 0, "ResultDesc": "Completed"})
 
-    # TODO: persist this the same way STK results are - currently logged only
+    await transaction_store.set(
+        f"c2b:{trans_id}",
+        {
+            "transaction_type": confirmation_data.get("TransactionType"),
+            "transaction_id": trans_id,
+            "transaction_time": confirmation_data.get("TransTime"),
+            "amount": confirmation_data.get("TransAmount"),
+            "business_shortcode": confirmation_data.get("BusinessShortCode"),
+            "account_reference": confirmation_data.get("BillRefNumber"),
+            "invoice_number": confirmation_data.get("InvoiceNumber"),
+            "phone_number": confirmation_data.get("MSISDN"),
+            "first_name": confirmation_data.get("FirstName"),
+            "state": "completed",
+        },
+    )
+    logger.info("Persisted C2B transaction: {}", trans_id)
+
     return JSONResponse(content={"ResultCode": 0, "ResultDesc": "Completed"})

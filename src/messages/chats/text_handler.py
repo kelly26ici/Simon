@@ -1,6 +1,5 @@
 # src/messages/chats/text_handler.py
 
-import loguru
 from loguru import logger
 from src.messages.chats.conversation import get_history, append_message
 from src.messages.sender import send_whatsapp_message, send_typing_indicator

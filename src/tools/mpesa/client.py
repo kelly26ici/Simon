@@ -15,7 +15,7 @@ from loguru import logger
 from httpx import TransportError, TimeoutException
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from src.clients.httpx_client import httpx
+from src.clients.httpx_client import get_http_client
 from src.configs.settings import (
     CONSUMER_KEY,
     CONSUMER_SECRET,
@@ -54,12 +54,16 @@ class MpesaAgentClient:
         self.shortcode = SHORTCODE
         self.passkey = PASSKEY
         self.callback_url = CALLBACK_URL
-        self.client = httpx
 
         # Daraja tokens are valid ~1hr - caching this saves an extra HTTP
         # round trip on every single tool call instead of just the first.
         self._cached_token: Optional[str] = None
         self._token_expires_at: float = 0.0
+
+    @property
+    def client(self) -> Any:
+        """Lazily resolve the shared HTTP client at call time."""
+        return get_http_client()
 
     def _timestamp(self) -> str:
         return datetime.now(NAIROBI_TZ).strftime("%Y%m%d%H%M%S")

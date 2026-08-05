@@ -1,8 +1,16 @@
 # src/messages/sender.py
 
 import httpx
-import loguru
-from src.clients.httpx_client import httpx as shared_httpx
+from loguru import logger
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+
+from src.clients.httpx_client import get_http_client
 from src.configs.settings import (
     META_ACCESS_TOKEN,
     META_GRAPH_API_VERSION,
@@ -10,7 +18,9 @@ from src.configs.settings import (
     META_PHONE_NUMBER_ID,
 )
 
-logger = loguru.logger
+# Only retry genuine transient failures. HTTP status errors (bad auth,
+# malformed payload, Meta-side validation errors) are not retryable.
+_TRANSIENT_ERRORS = (httpx.TransportError, httpx.TimeoutException)
 
 
 def _get_headers() -> dict[str, str]:
@@ -26,6 +36,14 @@ def _get_messages_url() -> str:
     return f"{META_GRAPH_BASE_URL}/{META_GRAPH_API_VERSION}/{META_PHONE_NUMBER_ID}/messages"
 
 
+def _extract_error_details(exc: httpx.HTTPStatusError) -> dict:
+    """Extracts Meta's rich JSON error response from an HTTPStatusError."""
+    try:
+        return exc.response.json().get("error", {})
+    except Exception:
+        return {"raw": exc.response.text}
+
+
 async def send_whatsapp_message(to: str, text: str) -> None:
     """Sends a text message to a specific WhatsApp recipient."""
     url = _get_messages_url()
@@ -39,7 +57,8 @@ async def send_whatsapp_message(to: str, text: str) -> None:
     log = logger.bind(recipient=to, action="send_whatsapp_message")
 
     try:
-        resp = await shared_httpx.post(url, headers=_get_headers(), json=payload)
+        client = get_http_client()
+        resp = await client.post(url, headers=_get_headers(), json=payload)
         resp.raise_for_status()
 
         data = resp.json()
@@ -49,11 +68,7 @@ async def send_whatsapp_message(to: str, text: str) -> None:
         )
 
     except httpx.HTTPStatusError as exc:
-        # Extracts Meta's rich JSON error response
-        try:
-            error_details = exc.response.json().get("error", {})
-        except Exception:
-            error_details = {"raw": exc.response.text}
+        error_details = _extract_error_details(exc)
 
         log.bind(
             status_code=exc.response.status_code,
@@ -64,15 +79,17 @@ async def send_whatsapp_message(to: str, text: str) -> None:
         ).error(f"Meta Graph API error: {error_details.get('message', exc)}")
         raise
 
-    except httpx.TimeoutException:
-        log.error("Request timed out while sending WhatsApp message")
-        raise
-
-    except httpx.RequestError as exc:
-        log.error(f"Network error sending message to {to}: {exc}")
+    except _TRANSIENT_ERRORS as exc:
+        log.error(f"Transient error sending message to {to}: {exc}")
         raise
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(_TRANSIENT_ERRORS),
+    before_sleep=before_sleep_log(logger, "WARNING"),
+)
 async def send_typing_indicator(message_id: str) -> None:
     """Marks the inbound message as read and displays the typing bubble."""
     url = _get_messages_url()
@@ -86,7 +103,8 @@ async def send_typing_indicator(message_id: str) -> None:
     log = logger.bind(target_msg_id=message_id, action="send_typing_indicator")
 
     try:
-        resp = await shared_httpx.post(url, headers=_get_headers(), json=payload)
+        client = get_http_client()
+        resp = await client.post(url, headers=_get_headers(), json=payload)
         resp.raise_for_status()
 
         log.bind(status_code=resp.status_code).debug(
@@ -94,10 +112,7 @@ async def send_typing_indicator(message_id: str) -> None:
         )
 
     except httpx.HTTPStatusError as exc:
-        try:
-            error_details = exc.response.json().get("error", {})
-        except Exception:
-            error_details = {"raw": exc.response.text}
+        error_details = _extract_error_details(exc)
 
         log.bind(
             status_code=exc.response.status_code,
@@ -106,7 +121,10 @@ async def send_typing_indicator(message_id: str) -> None:
         ).warning(
             f"Failed to set typing indicator: {error_details.get('message', exc)}"
         )
-        # Note: We don't raise here so typing indicator failures don't break message delivery pipeline
+        # Note: We don't raise here so typing indicator failures don't break
+        # the message delivery pipeline. The retry decorator only retries
+        # transient errors, not HTTPStatusError.
 
-    except httpx.RequestError as exc:
+    except _TRANSIENT_ERRORS as exc:
         log.warning(f"Network warning setting typing indicator: {exc}")
+        raise

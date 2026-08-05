@@ -1,4 +1,4 @@
-# src/messages/chats/conversations.py
+# src/messages/chats/conversation.py
 
 from src.configs.settings import MAX_HISTORY
 from src.core.redis import RedisStore

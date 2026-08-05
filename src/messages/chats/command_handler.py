@@ -1,1 +1,1 @@
-# src/messages/chats/command_haner.py
+# src/messages/chats/command_handler.py

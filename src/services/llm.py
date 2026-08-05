@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 from loguru import logger
 
 from src.configs.prompts import system_prompt
-from src.configs.settings import NVIDIA_API_KEY, OPENROUTER_API_KEY
+from src.configs.settings import OPENROUTER_API_KEY
 from src.tools.registry import registry
 
 client = AsyncOpenAI(
