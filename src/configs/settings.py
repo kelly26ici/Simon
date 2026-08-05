@@ -45,6 +45,22 @@ MAX_HISTORY = int(os.getenv("MAX_HISTORY", "10"))
 
 
 #======================================================
+#                     FORMATTING
+#======================================================
+
+# Maximum characters per WhatsApp text message (WhatsApp Cloud API limit is 4096).
+WHATSAPP_MAX_MESSAGE_LENGTH = int(os.getenv("WHATSAPP_MAX_MESSAGE_LENGTH", "4096"))
+
+# How to render Markdown tables in WhatsApp:
+#   "text"  — convert to a plain-text aligned grid (default)
+#   "image" — render as an image (requires Pillow; falls back to text if unavailable)
+WHATSAPP_TABLE_MODE = os.getenv("WHATSAPP_TABLE_MODE", "text")
+
+# When True, the formatter logs debug info about each transformation.
+WHATSAPP_FORMAT_DEBUG = os.getenv("WHATSAPP_FORMAT_DEBUG", "false").lower() in ("1", "true", "yes")
+
+
+#======================================================
 #                     QDRANT                          #
 #======================================================
 

@@ -17,6 +17,7 @@ from src.configs.settings import (
     META_GRAPH_BASE_URL,
     META_PHONE_NUMBER_ID,
 )
+from src.messages.formatter import format_for_whatsapp
 
 # Only retry genuine transient failures. HTTP status errors (bad auth,
 # malformed payload, Meta-side validation errors) are not retryable.
@@ -44,8 +45,11 @@ def _extract_error_details(exc: httpx.HTTPStatusError) -> dict:
         return {"raw": exc.response.text}
 
 
-async def send_whatsapp_message(to: str, text: str) -> None:
-    """Sends a text message to a specific WhatsApp recipient."""
+async def _send_single_message(to: str, text: str) -> str | None:
+    """Sends a single WhatsApp text message (no formatting, no splitting).
+
+    Returns the Meta message ID on success, or None on failure.
+    """
     url = _get_messages_url()
     payload = {
         "messaging_product": "whatsapp",
@@ -66,6 +70,7 @@ async def send_whatsapp_message(to: str, text: str) -> None:
         log.bind(wa_mid=meta_msg_id, status_code=resp.status_code).info(
             "WhatsApp message delivered successfully"
         )
+        return meta_msg_id
 
     except httpx.HTTPStatusError as exc:
         error_details = _extract_error_details(exc)
@@ -82,6 +87,24 @@ async def send_whatsapp_message(to: str, text: str) -> None:
     except _TRANSIENT_ERRORS as exc:
         log.error(f"Transient error sending message to {to}: {exc}")
         raise
+
+
+async def send_whatsapp_message(to: str, text: str) -> None:
+    """Sends a text message to a specific WhatsApp recipient.
+
+    The text is first passed through the WhatsApp formatting layer, which:
+    - Converts Markdown to WhatsApp-compatible syntax
+    - Converts tables to readable text grids
+    - Splits long responses (>4096 chars) at paragraph boundaries
+
+    If the formatted text is split into multiple parts, each part is sent
+    as a separate WhatsApp message.
+    """
+    # Format the text through the WhatsApp formatting layer (single choke-point)
+    messages = format_for_whatsapp(text)
+
+    for msg in messages:
+        await _send_single_message(to, msg)
 
 
 @retry(
