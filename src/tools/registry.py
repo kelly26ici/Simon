@@ -82,12 +82,53 @@ class ToolRegistry:
 
         try:
             result = await tool.handler(validated_args)
-        except Exception:
+        except Exception as exc:
             logger.exception("Handler for tool '{}' raised an unexpected error.", tool_name)
-            return self._output(call_id, {"error": f"Tool '{tool_name}' failed during execution."})
+            # Surface a legible, actionable cause to the model. The previous generic
+            # message ("Tool 'X' failed during execution.") gave the agent nothing to
+            # act on, so it would retry the same doomed tool in a loop. We keep the
+            # detail short and structured; classify the common infra failure modes so
+            # the agent can tell the customer "the database is unavailable" vs "the
+            # data isn't there" and stop retrying.
+            error_cls = type(exc).__name__
+            detail = str(exc).strip() or repr(exc)
+            cause = self._classify_error(exc)
+            return self._output(call_id, {
+                "error": f"Tool '{tool_name}' failed: {cause}",
+                "error_type": error_cls,
+                "detail": detail,
+                "retry_useful": cause != "database_unreachable",
+            })
 
         logger.success("Tool '{}' executed successfully.", tool_name)
         return self._output(call_id, result)
+
+    @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        """Map an exception to a short, agent-actionable cause label.
+
+        The categories drive `retry_useful`: a transient DNS/connection failure
+        is worth a retry; a missing-table / missing-row error is not, because
+        retrying the exact same call will produce the exact same failure and
+        the agent should stop and inform the customer instead.
+        """
+        name = type(exc).__name__
+        msg = str(exc)
+
+        # Supabase/PostgREST schema-cache misses (e.g. PGRST205 'Could not find
+        # the table ... in the schema cache') and similar forced-50 lookups.
+        if "PGRST205" in msg or "schema cache" in msg:
+            return "database_table_missing"
+        if name == "APIError" and "PGRST" in msg:
+            return "database_query_rejected"
+
+        # Connectivity / DNS failures (httpx.ConnectError, gaierror, etc.).
+        if name in {"ConnectError", "ConnectTimeout", "ReadTimeout", "TimeoutError"}:
+            return "database_unreachable"
+        if "Name or service not known" in msg or "gaierror" in msg.lower():
+            return "database_unreachable"
+
+        return "unexpected_error"
 
     @staticmethod
     def _output(call_id: str, result: Any) -> dict[str, Any]:
