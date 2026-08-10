@@ -57,7 +57,7 @@ from src.configs import settings  # noqa: E402
 EXPECTED: dict[str, list[str]] = {
     "customer_profiles": [
         "whatsapp_id", "preferred_name", "budget_range", "preferred_area",
-        "created_at", "updated_at",
+        "metadata", "created_at", "updated_at",
     ],
     "mpesa_transactions": [
         "checkout_request_id", "merchant_request_id", "phone_number", "amount",

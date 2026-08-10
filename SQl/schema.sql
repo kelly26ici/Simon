@@ -156,6 +156,12 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
     preferred_name  TEXT,
     budget_range    TEXT,
     preferred_area  TEXT,
+    -- Catch-all for any other customer fact the agent learns (preferred_city,
+    -- preferred_bedrooms, preferred_property_type, max_budget_kes, ...).
+    -- save_customer_fact accepts any snake_case field; fields that aren't a
+    -- real column above are stored here so the upsert never fails with
+    -- "column does not exist".
+    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

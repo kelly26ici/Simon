@@ -10,6 +10,13 @@ class DatabaseClient:
         self.client = supabase
 
     # --- Customer Profiles ---
+    # The customer_profiles table has a few real columns (preferred_name,
+    # budget_range, preferred_area) PLUS a JSONB `metadata` catch-all column.
+    # save_customer_fact accepts any snake_case field, so fields that aren't a
+    # real column get merged into `metadata` — otherwise PostgREST would reject
+    # the upsert with "column does not exist". Known columns are written top-level.
+    _CUSTOMER_PROFILE_COLUMNS = {"preferred_name", "budget_range", "preferred_area"}
+
     async def get_customer_profile(self, whatsapp_id: str) -> Optional[Dict[str, Any]]:
         if not self.client:
             return None
@@ -19,7 +26,20 @@ class DatabaseClient:
     async def upsert_customer_profile(self, whatsapp_id: str, data: Dict[str, Any]) -> None:
         if not self.client:
             return
-        payload = {"whatsapp_id": whatsapp_id, **data}
+        known = {k: v for k, v in data.items() if k in self._CUSTOMER_PROFILE_COLUMNS}
+        # Unknown fields go into the JSONB metadata column, merged with whatever
+        # is already there (PostgREST upsert can't merge JSONB by default, so we
+        # read-then-merge for correctness when unknown fields are present).
+        unknown = {k: v for k, v in data.items() if k not in self._CUSTOMER_PROFILE_COLUMNS}
+
+        payload: Dict[str, Any] = {"whatsapp_id": whatsapp_id, **known}
+
+        if unknown:
+            existing = await self.get_customer_profile(whatsapp_id) or {}
+            merged = {**(existing.get("metadata") or {}), **unknown}
+            payload["metadata"] = merged
+
+        await self.client.table("customer_profiles").upsert(payload).execute()
         await self.client.table("customer_profiles").upsert(payload).execute()
 
     # --- Mpesa Transactions ---
