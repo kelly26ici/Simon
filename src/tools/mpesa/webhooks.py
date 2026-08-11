@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from src.configs.settings import MPESA_WEBHOOK_SECRET
+from src.services.db import db
 from src.tools.mpesa.store import transaction_store
 from src.tools.mpesa.schemas import TransactionState
 
@@ -94,14 +95,40 @@ async def handle_stk_callback(secret: str, request: Request):
         )
         return ack
 
+    mpesa_receipt = metadata.get("MpesaReceiptNumber")
+    amount = metadata.get("Amount")
+    phone_number = metadata.get("PhoneNumber")
+
     await transaction_store.update(
         checkout_request_id,
         state=TransactionState.SUCCESS.value,
-        mpesa_receipt=metadata.get("MpesaReceiptNumber"),
-        amount=metadata.get("Amount"),
-        phone_number=metadata.get("PhoneNumber"),
+        mpesa_receipt=mpesa_receipt,
+        amount=amount,
+        phone_number=phone_number,
         result_desc="Payment received",
     )
+
+    # Best-effort durable write to Supabase so check_payment_history has
+    # data to query. Never block the Daraja ack — a DB failure here must not
+    # cause the callback to retry.
+    try:
+        await db.save_mpesa_transaction(
+            checkout_request_id,
+            {
+                "merchant_request_id": stk_callback.get("MerchantRequestID"),
+                "phone_number": phone_number,
+                "amount": amount,
+                "account_reference": metadata.get("AccountReference"),
+                "mpesa_receipt": mpesa_receipt,
+                "state": "success",
+                "result_desc": "Payment received",
+            },
+        )
+    except Exception as e:
+        logger.warning(
+            "STK success {} persisted to Redis but failed Supabase write: {}",
+            checkout_request_id, e,
+        )
 
     logger.info("STK success: {} - {}", checkout_request_id, metadata)
     return ack
