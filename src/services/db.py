@@ -10,29 +10,48 @@ class DatabaseClient:
         self.client = supabase
 
     # --- Customer Profiles ---
+    # The customer_profiles table has a few real columns (preferred_name,
+    # budget_range, preferred_area) PLUS a JSONB `metadata` catch-all column.
+    # save_customer_fact accepts any snake_case field, so fields that aren't a
+    # real column get merged into `metadata` — otherwise PostgREST would reject
+    # the upsert with "column does not exist". Known columns are written top-level.
+    _CUSTOMER_PROFILE_COLUMNS = {"preferred_name", "budget_range", "preferred_area"}
+
     async def get_customer_profile(self, whatsapp_id: str) -> Optional[Dict[str, Any]]:
         if not self.client:
             return None
-        response = await self.client.table("customer_profiles").select("*").eq("whatsapp_id", whatsapp_id).execute()
+        response = self.client.table("customer_profiles").select("*").eq("whatsapp_id", whatsapp_id).execute()
         return response.data[0] if response.data else None
 
     async def upsert_customer_profile(self, whatsapp_id: str, data: Dict[str, Any]) -> None:
         if not self.client:
             return
-        payload = {"whatsapp_id": whatsapp_id, **data}
-        await self.client.table("customer_profiles").upsert(payload).execute()
+        known = {k: v for k, v in data.items() if k in self._CUSTOMER_PROFILE_COLUMNS}
+        # Unknown fields go into the JSONB metadata column, merged with whatever
+        # is already there (PostgREST upsert can't merge JSONB by default, so we
+        # read-then-merge for correctness when unknown fields are present).
+        unknown = {k: v for k, v in data.items() if k not in self._CUSTOMER_PROFILE_COLUMNS}
+
+        payload: Dict[str, Any] = {"whatsapp_id": whatsapp_id, **known}
+
+        if unknown:
+            existing = self.get_customer_profile(whatsapp_id) or {}
+            merged = {**(existing.get("metadata") or {}), **unknown}
+            payload["metadata"] = merged
+
+        self.client.table("customer_profiles").upsert(payload).execute()
 
     # --- Mpesa Transactions ---
     async def save_mpesa_transaction(self, checkout_request_id: str, data: Dict[str, Any]) -> None:
         if not self.client:
             return
         payload = {"checkout_request_id": checkout_request_id, **data}
-        await self.client.table("mpesa_transactions").upsert(payload).execute()
+        self.client.table("mpesa_transactions").upsert(payload).execute()
 
     async def get_mpesa_transaction(self, checkout_request_id: str) -> Optional[Dict[str, Any]]:
         if not self.client:
             return None
-        response = await self.client.table("mpesa_transactions").select("*").eq("checkout_request_id", checkout_request_id).execute()
+        response = self.client.table("mpesa_transactions").select("*").eq("checkout_request_id", checkout_request_id).execute()
         return response.data[0] if response.data else None
 
     async def check_payment_history(self, phone_number: str) -> bool:
@@ -40,7 +59,7 @@ class DatabaseClient:
         if not self.client:
             return False
         response = (
-            await self.client.table("mpesa_transactions")
+            self.client.table("mpesa_transactions")
             .select("checkout_request_id")
             .eq("phone_number", phone_number)
             .eq("state", "success")
@@ -54,7 +73,7 @@ class DatabaseClient:
         """Insert or update a property. If 'id' is not provided, Supabase generates one."""
         if not self.client:
             return None
-        response = await self.client.table("properties").upsert(property_data).execute()
+        response = self.client.table("properties").upsert(property_data).execute()
         return response.data[0] if response.data else None
 
     async def search_properties(self, **filters) -> List[Dict[str, Any]]:
@@ -64,7 +83,7 @@ class DatabaseClient:
         for k, v in filters.items():
             if v is not None:
                 query = query.eq(k, v)
-        response = await query.execute()
+        response = query.execute()
         return response.data
 
     async def get_property_by_id(self, property_id: str) -> Optional[Dict[str, Any]]:
@@ -72,7 +91,7 @@ class DatabaseClient:
         if not self.client:
             return None
         response = (
-            await self.client.table("properties")
+            self.client.table("properties")
             .select("*")
             .eq("id", property_id)
             .single()
@@ -159,7 +178,7 @@ class DatabaseClient:
         # Pagination
         query = query.range(offset, offset + limit - 1)
 
-        response = await query.execute()
+        response = query.execute()
         return response.data
 
 

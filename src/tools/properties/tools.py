@@ -87,9 +87,18 @@ async def search_properties(payload: SearchPropertiesSchema) -> Dict[str, Any]:
 
     try:
         results = await db.search_properties_advanced(**filters)
-    except Exception:
+    except Exception as exc:
         logger.exception("Structured property search failed")
-        return {"error": "Property search failed. Please try again."}
+        return {
+            "error": "Property search failed.",
+            "error_type": type(exc).__name__,
+            "detail": str(exc).strip() or repr(exc),
+            "hint": (
+                "The database may be unreachable or the 'properties' table may be "
+                "missing. Do not retry the same search; ask the customer to rephrase "
+                "or inform them listings are temporarily unavailable."
+            ),
+        }
 
     return {
         "total": len(results),
@@ -133,9 +142,18 @@ async def semantic_search_properties(payload: SemanticSearchSchema) -> Dict[str,
             property_type=payload.property_type.value if payload.property_type else None,
             listing_type=payload.listing_type.value if payload.listing_type else None,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Semantic property search failed")
-        return {"error": "Semantic search failed. Try search_properties with specific filters instead."}
+        return {
+            "error": "Semantic search failed.",
+            "error_type": type(exc).__name__,
+            "detail": str(exc).strip() or repr(exc),
+            "hint": (
+                "This usually means the embeddings service (Cloudflare) or the "
+                "vector store (Qdrant) is unreachable, or the property index is empty. "
+                "Falling back to search_properties with specific filters may still work."
+            ),
+        }
 
     if not results:
         return {

@@ -321,8 +321,11 @@ async def seed():
             logger.exception("Failed to seed: {}", prop["title"])
 
     logger.info("Seeding complete. Indexing into Qdrant...")
-    count = await index_all_properties()
-    logger.success("Indexed {} properties into Qdrant.", count)
+    try:
+        count = await index_all_properties()
+        logger.success("Indexed {} properties into Qdrant.", count)
+    except Exception as e:
+        logger.warning("Qdrant indexing skipped: {}", e)
 
 
 if __name__ == "__main__":
