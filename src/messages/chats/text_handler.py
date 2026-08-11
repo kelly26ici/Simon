@@ -1,11 +1,13 @@
 # src/messages/chats/text_handler.py
 
 from loguru import logger
+
 from src.messages.chats.conversation import get_history, append_message
 from src.messages.sender import send_whatsapp_message, send_typing_indicator
 from src.services.llm import ask_gpt
 
 logger.add("logs/text_handler.log", rotation="100 MB")
+
 
 async def handle_text(sender: str, msg: dict) -> None:
     """Handles one incoming text message using THIS customer's own history."""
@@ -17,11 +19,27 @@ async def handle_text(sender: str, msg: dict) -> None:
 
     try:
         await send_typing_indicator(message_id)
-    except Exception:
-        logger.warning("typing indicator failed for %s", message_id, exc_info=True)
+    except Exception as exc:
+        logger.warning(
+            "Typing indicator failed for {}: {}",
+            message_id,
+            exc,
+            exc_info=True,
+        )
 
-    reply = await ask_gpt(history)  # full per-customer history, not just the raw string
+    try:
+        reply = await ask_gpt(history)
+    except Exception as exc:
+        logger.exception("LLM failed for sender {}: {}", sender, exc)
+        fallback = "I’m having trouble answering that right now. Please try again in a moment."
+        await append_message(sender, "assistant", fallback)
+        await send_whatsapp_message(sender, fallback)
+        return
+
     reply_text = reply.output_text
     await append_message(sender, "assistant", reply_text)
 
-    await send_whatsapp_message(sender, reply_text)
+    try:
+        await send_whatsapp_message(sender, reply_text)
+    except Exception as exc:
+        logger.exception("WhatsApp send failed for sender {}: {}", sender, exc)

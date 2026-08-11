@@ -42,15 +42,31 @@ async def get_embeddings(text_chunks: list[str]) -> List[List[float]]:
             timeout=30,
         )
         response.raise_for_status()
-    except httpx.HTTPStatusError as e:
+    except httpx.HTTPStatusError as exc:
         logger.error(
-            "Cloudflare Edge Error [{}]: {}",
-            e.response.status_code,
-            e.response.text,
+            "Cloudflare embeddings HTTP error [{}]: {}",
+            getattr(exc.response, "status_code", None),
+            exc,
         )
         return []
-    except httpx.RequestError as e:
-        logger.error("Network timeout/failure connecting to Cloudflare: {}", e)
+    except httpx.TimeoutException as exc:
+        logger.error("Cloudflare embeddings request timed out: {}", exc)
+        return []
+    except httpx.RequestError as exc:
+        logger.error("Network error calling Cloudflare embeddings: {}", exc)
+        return []
+    except Exception as exc:
+        logger.exception("Unexpected error fetching embeddings")
         return []
 
-    return response.json()["result"]["data"]
+    try:
+        data = response.json()
+    except Exception as exc:
+        logger.exception("Failed to decode embeddings response: {}", exc)
+        return []
+
+    try:
+        return data["result"]["data"]
+    except Exception as exc:
+        logger.exception("Embeddings response missing expected schema: {}", exc)
+        return []

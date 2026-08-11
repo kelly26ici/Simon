@@ -1,7 +1,7 @@
 # src/services/llm.py
 
 import os
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError, APIStatusError, APIConnectionError, APIError
 from loguru import logger
 
 from src.configs.prompts import system_prompt
@@ -14,6 +14,40 @@ client = AsyncOpenAI(
 )
 
 MODEL_NAME = os.getenv("LLM_MODEL", "deepseek/deepseek-v4-flash")
+
+
+class LLMRateLimitError(Exception):
+    """Raised when the upstream LLM returns 429 or rate-limit-like responses."""
+
+
+class LLMServiceUnavailableError(Exception):
+    """Raised when the upstream LLM is unreachable or returns 5xx."""
+
+
+class LLMError(Exception):
+    """Generic fallback for unexpected LLM/API failures."""
+
+
+def _classify_openai_exception(exc: Exception) -> Exception:
+    if isinstance(exc, RateLimitError):
+        return LLMRateLimitError(f"OpenRouter rate limited: {exc}")
+    if isinstance(exc, APIStatusError):
+        status = getattr(exc, "status_code", None)
+        body = ""
+        try:
+            body = exc.response.text if exc.response is not None else ""
+        except Exception:
+            body = ""
+        if status and status >= 500:
+            return LLMServiceUnavailableError(
+                f"OpenRouter server error {status}: {body}".strip()
+            )
+        return LLMError(f"OpenRouter API status error {status}: {body}".strip())
+    if isinstance(exc, APIConnectionError):
+        return LLMServiceUnavailableError(f"OpenRouter connection error: {exc}")
+    if isinstance(exc, APIError):
+        return LLMError(f"OpenRouter API error: {exc}")
+    return LLMError(f"Unexpected LLM error: {exc}")
 
 
 async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
@@ -33,6 +67,7 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
         *history,
     ]
 
+    last_error: Exception | None = None
     for iteration in range(max_tool_iterations):
         kwargs = {
             "model": MODEL_NAME,
@@ -42,7 +77,29 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
         if tools:
             kwargs["tools"] = tools
 
-        response = await client.responses.create(**kwargs)
+        try:
+            response = await client.responses.create(**kwargs)
+        except RateLimitError as exc:
+            last_error = _classify_openai_exception(exc)
+            logger.warning("LLM rate limited on iteration {}: {}", iteration, exc)
+            raise last_error
+        except APIStatusError as exc:
+            last_error = _classify_openai_exception(exc)
+            status = getattr(exc, "status_code", None)
+            logger.error("LLM API status error {} on iteration {}: {}", status, iteration, exc)
+            raise last_error
+        except APIConnectionError as exc:
+            last_error = _classify_openai_exception(exc)
+            logger.error("LLM connection error on iteration {}: {}", iteration, exc)
+            raise last_error
+        except APIError as exc:
+            last_error = _classify_openai_exception(exc)
+            logger.error("LLM API error on iteration {}: {}", iteration, exc)
+            raise last_error
+        except Exception as exc:
+            last_error = _classify_openai_exception(exc)
+            logger.exception("Unexpected error calling LLM on iteration {}", iteration)
+            raise last_error
 
         function_calls = [
             item for item in getattr(response, "output", [])
@@ -61,10 +118,17 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
                 "type": "function_call",
                 "call_id": call_id,
                 "name": name,
-                "arguments": args if isinstance(args, str) else str(args)
+                "arguments": args if isinstance(args, str) else str(args),
             })
 
+        try:
             tool_output_item = await registry.execute(call_id, name, args)
-            input_items.append(tool_output_item)
+        except Exception as exc:
+            logger.exception("Tool execution failed during LLM iteration {}", iteration)
+            raise
 
+        input_items.append(tool_output_item)
+
+    if last_error is not None:
+        raise last_error
     return response

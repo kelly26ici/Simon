@@ -20,8 +20,8 @@ async def _keep_alive():
         except asyncio.CancelledError:
             logger.info("Keep-alive task stopped.")
             break
-        except Exception:
-            logger.exception("Error pinging uptime endpoint")
+        except Exception as exc:
+            logger.exception("Error pinging uptime endpoint: {}", exc)
 
         await asyncio.sleep(300)
 

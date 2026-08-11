@@ -40,8 +40,12 @@ async def process_webhook_event(body: bytes, signature_header: str) -> Response:
 
     try:
         await dispatch(message)
-    except Exception:
-        logger.exception("Error handling message from {}", message.sender)
+    except Exception as exc:
+        logger.exception(
+            "Error handling message from {}: {}",
+            message.sender,
+            exc,
+        )
 
     return Response(status_code=200)
     
