@@ -129,6 +129,10 @@ CREATE INDEX IF NOT EXISTS idx_properties_active
     ON properties (price, bedrooms, city)
     WHERE status = 'available';
 
+-- Unique constraint on the seed fingerprint so re-runs update-in-place
+CREATE UNIQUE INDEX IF NOT EXISTS uq_properties_fingerprint
+ON properties (title, location, price, listing_type, property_type);
+
 -- ============================================================================
 -- UPDATED_AT TRIGGER
 -- ============================================================================

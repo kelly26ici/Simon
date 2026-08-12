@@ -333,7 +333,10 @@ async def seed():
     inserted = 0
     for prop in SAMPLE_PROPERTIES:
         try:
-            saved = await db.upsert_property(prop)
+            saved = await db.upsert_property(
+            prop,
+            on_conflict="title,location,price,listing_type,property_type",
+        )
             if saved:
                 inserted += 1
                 logger.success("Seeded: {}", prop["title"])

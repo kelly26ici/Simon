@@ -69,11 +69,18 @@ class DatabaseClient:
         return len(response.data) > 0
 
     # --- Properties ---
-    async def upsert_property(self, property_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def upsert_property(
+        self,
+        property_data: Dict[str, Any],
+        on_conflict: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Insert or update a property. If 'id' is not provided, Supabase generates one."""
         if not self.client:
             return None
-        response = self.client.table("properties").upsert(property_data).execute()
+        query = self.client.table("properties").upsert(property_data)
+        if on_conflict:
+            query = query.on_conflict(on_conflict)
+        response = query.execute()
         return response.data[0] if response.data else None
 
     async def search_properties(self, **filters) -> List[Dict[str, Any]]:
