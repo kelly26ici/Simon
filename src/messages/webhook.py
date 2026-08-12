@@ -35,8 +35,7 @@ async def process_webhook_event(body: bytes, signature_header: str) -> Response:
         if await SeenMessages.get(msg_id):
             logger.debug("Duplicate message ignored: {}", msg_id)
             return Response(status_code=200)
-        await SeenMessages.set(msg_id, True, ex=3600)  # 1 hour expiry
-
+        await SeenMessages.set(msg_id, "1", ex=3600)
 
     try:
         await dispatch(message)
@@ -48,4 +47,3 @@ async def process_webhook_event(body: bytes, signature_header: str) -> Response:
         )
 
     return Response(status_code=200)
-    
