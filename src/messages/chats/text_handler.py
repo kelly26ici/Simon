@@ -36,7 +36,16 @@ async def handle_text(sender: str, msg: dict) -> None:
         await send_whatsapp_message(sender, fallback)
         return
 
-    reply_text = reply.output_text
+    reply_text = getattr(reply, "output_text", None) or ""
+    if not reply_text:
+        logger.warning(
+            "LLM returned empty / None output_text for sender={} — sending fallback",
+            sender,
+        )
+        fallback = "I'm having trouble answering that right now. Please try again in a moment."
+        await append_message(sender, "assistant", fallback)
+        await send_whatsapp_message(sender, fallback)
+        return
     await append_message(sender, "assistant", reply_text)
 
     try:

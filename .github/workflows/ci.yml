@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run test suite
+        run: python -m pytest tests/ -v --tb=short
+        env:
+          # Provide dummy env vars so settings.py loads cleanly;
+          # tests mock out the actual clients so these are never used.
+          GROQ_API_KEY: "test-key"
+          OPENROUTER_API_KEY: "test-key"
+          META_ACCESS_TOKEN: "test-token"
+          META_PHONE_NUMBER_ID: "test-phone-id"
+          META_VERIFY_TOKEN: "test-verify-token"
+          META_APP_SECRET: "test-secret"
+          META_GRAPH_API_VERSION: "v23.0"
+          META_GRAPH_BASE_URL: "https://graph.facebook.com"
+          RENDER_BASE_URL: "https://samantha-nrev.onrender.com"
+          REDIS_URL: "redis://localhost:6379"
+          SUPABASE_URL: ""
+          SUPABASE_KEY: ""
+          TAVILY_API_KEY: "test-tavily-key"
+          QDRANT_API_KEY: "test-qdrant-key"
+          QDRANT_URL: "https://test.qdrant.io"
+          CONSUMER_SECRET: "test"
+          CONSUMER_KEY: "test"
+          PASSKEY: "test"
+          SHORTCODE: "test"
+          CALLBACK_URL: "https://test.example.com/callback"
+          MPESA_WEBHOOK_SECRET: "test-secret"

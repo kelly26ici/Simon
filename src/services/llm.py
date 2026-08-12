@@ -129,6 +129,13 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
 
         input_items.append(tool_output_item)
 
-    if last_error is not None:
-        raise last_error
+    # The loop body always raises on error paths; `last_error` is only set
+    # inside `except` blocks that immediately raise, so it is guaranteed
+    # `None` here. The assertion catches any future accidental removal of
+    # a `raise` from an except branch, instead of silently returning a
+    # stale response from a previous iteration.
+    assert last_error is None, (
+        "last_error was set but no exception was raised — "
+        "a raise was removed from an except branch"
+    )
     return response
