@@ -1,9 +1,8 @@
-"""
-Seed script — inserts sample Nairobi real estate properties into Supabase
+"""Seed script — inserts sample Nairobi real estate properties into Supabase
 and indexes them in Qdrant for semantic search.
 
 Usage:
-    python scripts/seed_properties.py
+python scripts/seed_properties.py
 """
 
 import asyncio
@@ -16,6 +15,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.services.db import db
 from src.tools.properties import index_all_properties
 from loguru import logger
+
+
+def _fingerprint(prop):
+    return (
+        prop.get("title"),
+        prop.get("location"),
+        prop.get("price"),
+        prop.get("listing_type"),
+        prop.get("property_type"),
+    )
 
 
 SAMPLE_PROPERTIES = [
@@ -55,6 +64,7 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-modern-3br-kilimani",
     },
     {
         "title": "Luxury 4-Bedroom Townhouse in Westlands",
@@ -91,6 +101,7 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-luxury-4br-westlands",
     },
     {
         "title": "Cozy Studio Apartment in Kileleshwa",
@@ -126,6 +137,7 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-cozy-studio-kileleshwa",
     },
     {
         "title": "5-Bedroom Mansion in Muthaiga",
@@ -163,6 +175,7 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-5br-mansion-muthaiga",
     },
     {
         "title": "3-Bedroom Apartment for Rent in Lavington",
@@ -199,6 +212,7 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-3br-rent-lavington",
     },
     {
         "title": "2-Bedroom Apartment in Riverside",
@@ -234,6 +248,7 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-2br-rent-riverside",
     },
     {
         "title": "Commercial Property in Upper Hill",
@@ -269,6 +284,7 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-commercial-upper-hill",
     },
     {
         "title": "4-Bedroom House in Karen",
@@ -305,27 +321,36 @@ SAMPLE_PROPERTIES = [
         "agent_phone": "254700000000",
         "agent_email": "info@samantha-re.com",
         "source": "internal",
+        "external_id": "sample-4br-house-karen",
     },
 ]
 
 
 async def seed():
-    """Insert all sample properties into Supabase."""
+    """Insert all sample properties into Supabase and index into Qdrant."""
     logger.info("Seeding {} sample properties...", len(SAMPLE_PROPERTIES))
 
+    inserted = 0
     for prop in SAMPLE_PROPERTIES:
         try:
-            await db.upsert_property(prop)
-            logger.success("Seeded: {}", prop["title"])
+            saved = await db.upsert_property(prop)
+            if saved:
+                inserted += 1
+                logger.success("Seeded: {}", prop["title"])
+            else:
+                logger.warning("Seed returned no data for: {}", prop["title"])
         except Exception:
             logger.exception("Failed to seed: {}", prop["title"])
 
-    logger.info("Seeding complete. Indexing into Qdrant...")
+    logger.info("Seeding complete for {}/{} properties.", inserted, len(SAMPLE_PROPERTIES))
+
+    logger.info("Indexing into Qdrant...")
     try:
         count = await index_all_properties()
         logger.success("Indexed {} properties into Qdrant.", count)
-    except Exception as e:
-        logger.warning("Qdrant indexing skipped: {}", e)
+    except Exception:
+        logger.exception("Qdrant indexing failed")
+        raise
 
 
 if __name__ == "__main__":
