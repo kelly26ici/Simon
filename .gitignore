@@ -1,5 +1,3 @@
-
-
 all_python_code.txt# =====================
 # SECRETS
 ##ffffff =====================
@@ -12,7 +10,6 @@ all_python_code.txt# =====================
 secrets.json
 config.json
 credentials.json
-
 # =====================
 # PYTHON
 # =====================
@@ -22,7 +19,6 @@ __pycache__/
 *.pyd
 .Python
 *.so
-
 # =====================
 # VIRTUAL ENVIRONMENT
 # =====================
@@ -30,13 +26,11 @@ venv/
 env/
 .venv/
 .virtualenv/
-
 # =====================
 # PACKAGES / PIP
 # =====================
 pip-log.txt
 pip-delete-this-directory.txt
-
 # =====================
 # TESTING / COVERAGE
 # =====================
@@ -44,18 +38,15 @@ pip-delete-this-directory.txt
 .coverage
 htmlcov/
 .tox/
-
 # =====================
 # TYPE CHECKING
 # =====================
 .mypy_cache/
 .dmypy.json
-
 # =====================
 # JUPYTER NOTEBOOKS
 # =====================
 .ipynb_checkpoints/
-
 # =====================
 # AI / ML MODELS
 # =====================
@@ -65,21 +56,18 @@ htmlcov/
 *.pth
 *.safetensors
 models/
-
 # =====================
 # NODE / FRONTEND
 # =====================
 node_modules/
 bower_components/
 jspm_packages/
-
 # =====================
 # LOGS
 # =====================
 *.log
 logs/
 log/
-
 # =====================
 # BUILD OUTPUT
 # =====================
@@ -87,7 +75,6 @@ build/
 dist/
 out/
 target/
-
 # =====================
 # SYSTEM FILES
 # =====================
@@ -95,7 +82,6 @@ target/
 Thumbs.db
 *.swp
 *.swo
-
 # =====================
 # IDE / EDITORS
 # =====================
@@ -103,13 +89,11 @@ Thumbs.db
 .idea/
 *.sublime-workspace
 *.sublime-project
-
 # =====================
 # DEPLOYMENT
 # =====================
 render.yaml
 Procfile
-
 # =====================
 # ANDROID / TERMUX
 # =====================
@@ -117,7 +101,6 @@ Procfile
 *.obb
 *.dex
 .cache/
-
 # =====================
 # TEMP FILES
 # =====================
@@ -126,7 +109,6 @@ temp/
 *.tmp
 *.bak
 *.old
-
 # =====================
 # APPLICATION SPECIFIC
 # =====================
@@ -135,14 +117,11 @@ media/
 uploads/
 sessions/
 cache/
-
 # =====================
 # All CODE
 # =====================
 all_python_code.txt
-tests/
 .continue/
-
 # AI agent state — not application code
 .claude/
 .serena/

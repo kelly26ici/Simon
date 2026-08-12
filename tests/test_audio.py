@@ -190,14 +190,16 @@ async def test_download_media_bytes_success():
 
     fake_client = AsyncMock()
     fake_client.get.side_effect = fake_get
+    fake_client.aclose = AsyncMock()
 
     with patch(
-        "src.messages.downloader.get_http_client", return_value=fake_client
+        "src.messages.downloader.httpx.AsyncClient", return_value=fake_client
     ):
         result = await download_media_bytes("media_123")
 
     assert result == b"the-audio-bytes"
     assert fake_client.get.await_count == 2
+    fake_client.aclose.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -210,10 +212,14 @@ async def test_download_media_bytes_missing_url_returns_none(tmp_path):
     meta_resp.raise_for_status = Mock()
     meta_resp.json = Mock(return_value={})
     fake_client.get.return_value = meta_resp
+    fake_client.aclose = AsyncMock()
 
     with patch(
-        "src.messages.downloader.get_http_client", return_value=fake_client
+        "src.messages.downloader.httpx.AsyncClient", return_value=fake_client
     ):
         result = await download_media_bytes("media_123")
 
     assert result is None
+    # Step-2 must never be called when step-1 has no url.
+    assert fake_client.get.await_count == 1
+    fake_client.aclose.assert_called_once()
