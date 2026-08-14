@@ -116,7 +116,7 @@ def _wait(retry_state) -> float:
 
 # Maximum size for models.explain (32 KiB token budget).
 # Rejection happens here so it costs nothing compared to calling the API.
-_MAX_TRANSCRIPT_BYTES = 16 * 1024  # 16 KiB — well within the 32 KiB limit.
+_MAX_TRANSCRIPT_BYTES = 25 * 1024 * 1024  # 25 MB -- matches Groq API maximum per request.
 
 
 async def transcribe_audio(audio_path: Path) -> Optional[str]:
