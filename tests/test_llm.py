@@ -57,7 +57,7 @@ def _api_status_error(status: int, message: str = "error"):
         headers={"content-type": "application/json"},
         json={"error": {"message": message}},
         request=httpx.Request(
-            "POST", "https://openrouter.ai/api/v1/responses"
+            "POST", "https://api.groq.com/openai/v1/responses"
         ),
     )
     return APIStatusError(message=message, response=resp, body=None)
@@ -157,7 +157,7 @@ def test_classify_rate_limit_error_wraps_as_rate_limit():
 
 def test_classify_connection_error_wraps_as_unavailable():
     """_classify_openai_exception maps APIConnectionError -> LLMServiceUnavailableError."""
-    request = httpx.Request("POST", "https://openrouter.ai/api/v1/responses")
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/responses")
     exc = APIConnectionError(request=request)
     result = _classify_openai_exception(exc)
     assert isinstance(result, LLMServiceUnavailableError)

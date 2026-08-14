@@ -5,15 +5,16 @@ from openai import AsyncOpenAI, RateLimitError, APIStatusError, APIConnectionErr
 from loguru import logger
 
 from src.configs.prompts import system_prompt
-from src.configs.settings import OPENROUTER_API_KEY
+from src.configs.settings import GROQ_API_KEY
 from src.tools.registry import registry
 
+
 client = AsyncOpenAI(
-    api_key=OPENROUTER_API_KEY,
-    base_url="https://openrouter.ai/api/v1",
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1",
 )
 
-MODEL_NAME = os.getenv("LLM_MODEL", "deepseek/deepseek-v4-flash")
+MODEL_NAME = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 
 
 class LLMRateLimitError(Exception):
@@ -30,7 +31,7 @@ class LLMError(Exception):
 
 def _classify_openai_exception(exc: Exception) -> Exception:
     if isinstance(exc, RateLimitError):
-        return LLMRateLimitError(f"OpenRouter rate limited: {exc}")
+        return LLMRateLimitError(f"Groq rate limited: {exc}")
     if isinstance(exc, APIStatusError):
         status = getattr(exc, "status_code", None)
         body = ""
@@ -40,18 +41,18 @@ def _classify_openai_exception(exc: Exception) -> Exception:
             body = ""
         if status and status >= 500:
             return LLMServiceUnavailableError(
-                f"OpenRouter server error {status}: {body}".strip()
+                f"Groq server error {status}: {body}".strip()
             )
-        return LLMError(f"OpenRouter API status error {status}: {body}".strip())
+        return LLMError(f"Groq API status error {status}: {body}".strip())
     if isinstance(exc, APIConnectionError):
-        return LLMServiceUnavailableError(f"OpenRouter connection error: {exc}")
+        return LLMServiceUnavailableError(f"Groq connection error: {exc}")
     if isinstance(exc, APIError):
-        return LLMError(f"OpenRouter API error: {exc}")
+        return LLMError(f"Groq API error: {exc}")
     return LLMError(f"Unexpected LLM error: {exc}")
 
 
 async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
-    """Sends conversation history to OpenRouter Responses API with automatic tool execution."""
+    """Sends conversation history to the Groq Responses API with automatic tool execution."""
     tools = registry.get_llm_declarations()
 
     input_items = [
@@ -101,25 +102,25 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = 5):
             logger.exception("Unexpected error calling LLM on iteration {}", iteration)
             raise last_error
 
-        function_calls = [
-            item for item in getattr(response, "output", [])
-            if getattr(item, "type", None) == "function_call" or (isinstance(item, dict) and item.get("type") == "function_call")
-        ]
+    function_calls = [
+        item for item in getattr(response, "output", [])
+        if getattr(item, "type", None) == "function_call" or (isinstance(item, dict) and item.get("type") == "function_call")
+    ]
 
-        if not function_calls:
-            return response
+    if not function_calls:
+        return response
 
-        for fc in function_calls:
-            call_id = getattr(fc, "call_id", None) or (fc.get("call_id") if isinstance(fc, dict) else None)
-            name = getattr(fc, "name", None) or (fc.get("name") if isinstance(fc, dict) else None)
-            args = getattr(fc, "arguments", None) or (fc.get("arguments") if isinstance(fc, dict) else None)
+    for fc in function_calls:
+        call_id = getattr(fc, "call_id", None) or (fc.get("call_id") if isinstance(fc, dict) else None)
+        name = getattr(fc, "name", None) or (fc.get("name") if isinstance(fc, dict) else None)
+        args = getattr(fc, "arguments", None) or (fc.get("arguments") if isinstance(fc, dict) else None)
 
-            input_items.append({
-                "type": "function_call",
-                "call_id": call_id,
-                "name": name,
-                "arguments": args if isinstance(args, str) else str(args),
-            })
+        input_items.append({
+            "type": "function_call",
+            "call_id": call_id,
+            "name": name,
+            "arguments": args if isinstance(args, str) else str(args),
+        })
 
         try:
             tool_output_item = await registry.execute(call_id, name, args)
