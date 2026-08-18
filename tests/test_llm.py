@@ -163,6 +163,103 @@ def test_classify_connection_error_wraps_as_unavailable():
     assert isinstance(result, LLMServiceUnavailableError)
 
 
+# ─── Regression: tool-call loop must not waste extra API calls ────────────────
+
+
+@pytest.mark.asyncio
+async def test_ask_gpt_tool_call_then_answer_exactly_two_calls():
+    """After one tool call + tool execution, the model is called exactly once more.
+
+    Reproduces the bug where the loop ran extra iterations after tool resolution,
+    causing empty output_text on the wasted call and unnecessary rate-limit burn.
+    """
+    tool_call = _make_tool_call(
+        name="search_properties", arguments='{"query": "2br"}'
+    )
+    first_response = _make_response(output_text="", tool_calls=[tool_call])
+    second_response = _make_response(output_text="Here are 3 matching properties.")
+
+    call_count = 0
+    captured_kwargs = []
+
+    async def fake_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        captured_kwargs.append(kwargs)
+        return first_response if call_count == 1 else second_response
+
+    fake_tool_output = {
+        "type": "function_call_output",
+        "call_id": "call_abc",
+        "output": '[{"id": 1, "title": "2BR Apt, Kilimani", "price": 50000}]',
+    }
+
+    with patch(
+        "src.services.llm.client.responses.create", side_effect=fake_create
+    ), patch(
+        "src.tools.registry.registry.execute",
+        AsyncMock(return_value=fake_tool_output),
+    ):
+        res = await ask_gpt(
+            [
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "Find me a 2br in Kilimani"}],
+                }
+            ],
+            max_tool_iterations=3,
+        )
+
+    assert res.output_text == "Here are 3 matching properties."
+    assert call_count == 2  # first call + one follow-up — no wasted third call
+
+    # Verify the second request actually carried the tool result back to the model
+    assert len(captured_kwargs) == 2
+    second_input = captured_kwargs[1]["input"]
+    input_types = [
+        item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
+        for item in second_input
+    ]
+    assert "function_call_output" in input_types, (
+        "Second Responses API request must include the function_call_output item"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ask_gpt_tool_call_then_answer_does_not_loop_idly():
+    """With max_tool_iterations=2 the loop must complete cleanly, not raise."""
+    tool_call = _make_tool_call(name="search_properties", arguments='{"query": "2br"}')
+    first_response = _make_response(output_text="", tool_calls=[tool_call])
+    second_response = _make_response(output_text="Done.")
+
+    call_count = 0
+
+    async def fake_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        return first_response if call_count == 1 else second_response
+
+    fake_tool_output = {
+        "type": "function_call_output",
+        "call_id": "call_abc",
+        "output": "[]",
+    }
+
+    with patch(
+        "src.services.llm.client.responses.create", side_effect=fake_create
+    ), patch(
+        "src.tools.registry.registry.execute",
+        AsyncMock(return_value=fake_tool_output),
+    ):
+        res = await ask_gpt(
+            [{"role": "user", "content": [{"type": "input_text", "text": "Find 2br"}]}],
+            max_tool_iterations=2,
+        )
+
+    assert res.output_text == "Done."
+    assert call_count == 2
+
+
 # ─── Error propagation in ask_gpt ────────────────────────────────────────────
 
 

@@ -11,10 +11,10 @@ from src.tools.registry import registry
 
 client = AsyncOpenAI(
     api_key=NVIDIA_API_KEY,
-    base_url="https://api.nvidia.com/v1",
+    base_url="https://intergrate.api.nvidia.com/v1",
 )
 
-MODEL_NAME = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
+MODEL_NAME = os.getenv("LLM_MODEL", "nvidia_nim/stepfun-ai/step-3.7-flash")
 MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "32768"))
 MAX_TOOL_ITERATIONS = int(os.getenv("LLM_MAX_TOOL_ITERATIONS", "10"))
 
