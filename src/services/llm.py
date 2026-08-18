@@ -5,13 +5,13 @@ from openai import AsyncOpenAI, RateLimitError, APIStatusError, APIConnectionErr
 from loguru import logger
 
 from src.configs.prompts import system_prompt
-from src.configs.settings import GROQ_API_KEY
+from src.configs.settings import NVIDIA_API_KEY
 from src.tools.registry import registry
 
 
 client = AsyncOpenAI(
-    api_key=GROQ_API_KEY,
-    base_url="https://api.groq.com/openai/v1",
+    api_key=NVIDIA_API_KEY,
+    base_url="https://api.nvidia.com/v1",
 )
 
 MODEL_NAME = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
