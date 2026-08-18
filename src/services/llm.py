@@ -11,10 +11,10 @@ from src.tools.registry import registry
 
 client = AsyncOpenAI(
     api_key=NVIDIA_API_KEY,
-    base_url="https://intergrate.api.nvidia.com/v1",
+    base_url="https://integrate.api.nvidia.com/v1",
 )
 
-MODEL_NAME = os.getenv("LLM_MODEL", "nvidia_nim/stepfun-ai/step-3.7-flash")
+MODEL_NAME = os.getenv("LLM_MODEL", "stepfun-ai/step-3.7-flash")
 MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "32768"))
 MAX_TOOL_ITERATIONS = int(os.getenv("LLM_MAX_TOOL_ITERATIONS", "10"))
 
@@ -33,7 +33,7 @@ class LLMError(Exception):
 
 def _classify_openai_exception(exc: Exception) -> Exception:
     if isinstance(exc, RateLimitError):
-        return LLMRateLimitError(f"Groq rate limited: {exc}")
+        return LLMRateLimitError(f"NVIDIA API rate limited: {exc}")
     if isinstance(exc, APIStatusError):
         status = getattr(exc, "status_code", None)
         body = ""
@@ -43,47 +43,103 @@ def _classify_openai_exception(exc: Exception) -> Exception:
             body = ""
         if status and status >= 500:
             return LLMServiceUnavailableError(
-                f"Groq server error {status}: {body}".strip()
+                f"NVIDIA API server error {status}: {body}".strip()
             )
-        return LLMError(f"Groq API status error {status}: {body}".strip())
+        return LLMError(f"NVIDIA API status error {status}: {body}".strip())
     if isinstance(exc, APIConnectionError):
-        return LLMServiceUnavailableError(f"Groq connection error: {exc}")
+        return LLMServiceUnavailableError(f"NVIDIA API connection error: {exc}")
     if isinstance(exc, APIError):
-        return LLMError(f"Groq API error: {exc}")
+        return LLMError(f"NVIDIA API error: {exc}")
     return LLMError(f"Unexpected LLM error: {exc}")
 
 
-async def ask_gpt(history: list[dict], max_tool_iterations: int = MAX_TOOL_ITERATIONS):
-    """Sends conversation history to the Groq Responses API with automatic tool execution."""
-    tools = registry.get_llm_declarations()
-
-    input_items = [
+def _build_openai_messages(history: list[dict]) -> list[dict]:
+    """Builds standard OpenAI Chat Completion messages from history."""
+    messages = [
         {
             "role": "system",
-            "content": [
-                {
-                    "type": "input_text",
-                    "text": system_prompt,
-                }
-            ],
-        },
-        *history,
+            "content": system_prompt,
+        }
     ]
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role", "user")
+        content = item.get("content", "")
+
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict):
+                    if "text" in part:
+                        text_parts.append(str(part["text"]))
+                    elif "input_text" in part:
+                        text_parts.append(str(part["input_text"]))
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            content_str = "\n".join(text_parts) if text_parts else str(content)
+        else:
+            content_str = str(content) if content is not None else ""
+
+        msg_dict = {"role": role, "content": content_str}
+
+        if "tool_calls" in item:
+            msg_dict["tool_calls"] = item["tool_calls"]
+        if "tool_call_id" in item:
+            msg_dict["tool_call_id"] = item["tool_call_id"]
+        if "name" in item:
+            msg_dict["name"] = item["name"]
+
+        messages.append(msg_dict)
+
+    return messages
+
+
+def _format_tools(tools: list[dict]) -> list[dict]:
+    """Formats tool declarations for OpenAI chat completions."""
+    formatted = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        if "function" in tool and isinstance(tool["function"], dict):
+            formatted.append(tool)
+        elif tool.get("type") == "function" and "name" in tool:
+            func_dict = {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "parameters": tool.get("parameters", {}),
+            }
+            if "strict" in tool:
+                func_dict["strict"] = tool["strict"]
+            formatted.append({
+                "type": "function",
+                "function": func_dict,
+            })
+        else:
+            formatted.append(tool)
+    return formatted
+
+
+async def ask_gpt(history: list[dict], max_tool_iterations: int = MAX_TOOL_ITERATIONS):
+    """Sends conversation history to NVIDIA NIM Chat Completions API with automatic tool execution."""
+    tools = registry.get_llm_declarations()
+    messages = _build_openai_messages(history)
 
     last_error: Exception | None = None
+    response = None
+
     for iteration in range(max_tool_iterations):
         kwargs: dict = {
             "model": MODEL_NAME,
-            "input": input_items,
-            "store": False,
-            "max_output_tokens": MAX_OUTPUT_TOKENS,
+            "messages": messages,
+            "max_tokens": MAX_OUTPUT_TOKENS,
         }
         if tools:
-            kwargs["tools"] = tools
+            kwargs["tools"] = _format_tools(tools)
             kwargs["tool_choice"] = "auto"
 
         try:
-            response = await client.responses.create(**kwargs)
+            response = await client.chat.completions.create(**kwargs)
         except RateLimitError as exc:
             last_error = _classify_openai_exception(exc)
             logger.warning("LLM rate limited on iteration {}: {}", iteration, exc)
@@ -106,64 +162,51 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = MAX_TOOL_ITERA
             logger.exception("Unexpected error calling LLM on iteration {}", iteration)
             raise last_error
 
-        # ── Structural logging: safe, no keys or private data ─────────────────
-        status = getattr(response, "status", None)
-        output = getattr(response, "output", None) or []
-        output_types = [getattr(item, "type", None) if not isinstance(item, dict) else item.get("type") for item in output]
-        output_text_value = getattr(response, "output_text", None)
-        logger.info(
-            "LLM response iteration={} status={} output_types={} output_text_len={}",
-            iteration,
-            status,
-            output_types,
-            len(output_text_value) if isinstance(output_text_value, str) else -1,
-        )
-
-        # ── Recover from a reasoning-model budget timeout ─────────────────────
-        # gpt-oss-120b (reasoning model) may return status=incomplete with an
-        # empty result when the reasoning chain hits its internal budget before
-        # emitting the final message or function_call.  We re-inject a short
-        # continuation prompt and let the next iteration resume from where the
-        # model left off, instead of silently returning an empty response.
-        if status == "incomplete" and not output_types:
-            logger.warning(
-                "LLM returned status=incomplete with empty output on iteration {}; "
-                "injecting continuation prompt and retrying",
-                iteration,
-            )
-            input_items.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Continue and produce your response now.",
-                        }
-                    ],
-                }
-            )
-            continue
-        # ──────────────────────────────────────────────────────────────────────
-
-        function_calls = [
-            item for item in output
-            if getattr(item, "type", None) == "function_call" or (isinstance(item, dict) and item.get("type") == "function_call")
-        ]
-
-        if not function_calls:
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            setattr(response, "output_text", "")
             return response
 
-        for fc in function_calls:
-            call_id = getattr(fc, "call_id", None) or (fc.get("call_id") if isinstance(fc, dict) else None)
-            name = getattr(fc, "name", None) or (fc.get("name") if isinstance(fc, dict) else None)
-            args = getattr(fc, "arguments", None) or (fc.get("arguments") if isinstance(fc, dict) else None)
+        first_choice = choices[0]
+        msg = getattr(first_choice, "message", None)
+        finish_reason = getattr(first_choice, "finish_reason", None)
 
-            input_items.append({
-                "type": "function_call",
-                "call_id": call_id,
-                "name": name,
-                "arguments": args if isinstance(args, str) else str(args),
-            })
+        output_text = getattr(msg, "content", None) or ""
+        setattr(response, "output_text", output_text)
+
+        tool_calls = getattr(msg, "tool_calls", None) or []
+
+        logger.info(
+            "LLM response iteration={} finish_reason={} output_text_len={} tool_calls_len={}",
+            iteration,
+            finish_reason,
+            len(output_text),
+            len(tool_calls),
+        )
+
+        if not tool_calls:
+            return response
+
+        assistant_msg = {
+            "role": "assistant",
+            "content": output_text or None,
+            "tool_calls": tool_calls,
+        }
+        messages.append(assistant_msg)
+
+        for tc in tool_calls:
+            call_id = getattr(tc, "id", None) or (tc.get("id") if isinstance(tc, dict) else None)
+            func = getattr(tc, "function", None)
+            if func:
+                name = getattr(func, "name", None)
+                args = getattr(func, "arguments", None)
+            elif isinstance(tc, dict) and "function" in tc:
+                name = tc["function"].get("name")
+                args = tc["function"].get("arguments")
+            else:
+                call_id = tc.get("call_id") if isinstance(tc, dict) else call_id
+                name = tc.get("name") if isinstance(tc, dict) else None
+                args = tc.get("arguments") if isinstance(tc, dict) else None
 
             try:
                 tool_output_item = await registry.execute(call_id, name, args)
@@ -171,13 +214,17 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = MAX_TOOL_ITERA
                 logger.exception("Tool execution failed during LLM iteration {}", iteration)
                 raise
 
-            input_items.append(tool_output_item)
+            if isinstance(tool_output_item, dict) and "output" in tool_output_item:
+                tool_result_content = tool_output_item["output"]
+            else:
+                tool_result_content = str(tool_output_item)
 
-    # The loop body always raises on error paths; `last_error` is only set
-    # inside `except` blocks that immediately raise, so it is guaranteed
-    # `None` here. The assertion catches any future accidental removal of
-    # a `raise` from an except branch, instead of silently returning a
-    # stale response from a previous iteration.
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": tool_result_content,
+            })
+
     assert last_error is None, (
         "last_error was set but no exception was raised — "
         "a raise was removed from an except branch"

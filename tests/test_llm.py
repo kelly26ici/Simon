@@ -30,9 +30,17 @@ from openai import RateLimitError, APIStatusError, APIConnectionError
 
 
 def _make_response(output_text: str = "done", tool_calls=None):
-    """Build a minimal AsyncMock mimicking an OpenAI Responses API result."""
+    """Build a minimal AsyncMock mimicking an OpenAI ChatCompletion result."""
+    msg = AsyncMock()
+    msg.content = output_text
+    msg.tool_calls = tool_calls or None
+
+    choice = AsyncMock()
+    choice.message = msg
+    choice.finish_reason = "tool_calls" if tool_calls else "stop"
+
     r = AsyncMock()
-    r.output = tool_calls or []
+    r.choices = [choice]
     r.output_text = output_text
     return r
 
@@ -42,12 +50,14 @@ def _make_tool_call(
     name: str = "search_properties",
     arguments: str = "{}",
 ):
-    return {
-        "type": "function_call",
-        "call_id": call_id,
-        "name": name,
-        "arguments": arguments,
-    }
+    func = AsyncMock()
+    func.name = name
+    func.arguments = arguments
+
+    tc = AsyncMock()
+    tc.id = call_id
+    tc.function = func
+    return tc
 
 
 def _api_status_error(status: int, message: str = "error"):
@@ -57,7 +67,7 @@ def _api_status_error(status: int, message: str = "error"):
         headers={"content-type": "application/json"},
         json={"error": {"message": message}},
         request=httpx.Request(
-            "POST", "https://api.groq.com/openai/v1/responses"
+            "POST", "https://integrate.api.nvidia.com/v1/chat/completions"
         ),
     )
     return APIStatusError(message=message, response=resp, body=None)
@@ -70,7 +80,7 @@ def _api_status_error(status: int, message: str = "error"):
 async def test_ask_gpt_basic():
     mock_response = _make_response(output_text="Hello there!")
     with patch(
-        "src.services.llm.client.responses.create", return_value=mock_response
+        "src.services.llm.client.chat.completions.create", AsyncMock(return_value=mock_response)
     ):
         res = await ask_gpt(
             [{"role": "user", "content": [{"type": "input_text", "text": "Hi"}]}],
@@ -105,7 +115,7 @@ async def test_ask_gpt_triggers_tool_then_returns_answer():
     }
 
     with patch(
-        "src.services.llm.client.responses.create", side_effect=fake_create
+        "src.services.llm.client.chat.completions.create", side_effect=fake_create
     ), patch(
         "src.tools.registry.registry.execute",
         AsyncMock(return_value=fake_tool_output),
@@ -157,7 +167,7 @@ def test_classify_rate_limit_error_wraps_as_rate_limit():
 
 def test_classify_connection_error_wraps_as_unavailable():
     """_classify_openai_exception maps APIConnectionError -> LLMServiceUnavailableError."""
-    request = httpx.Request("POST", "https://api.groq.com/openai/v1/responses")
+    request = httpx.Request("POST", "https://integrate.api.nvidia.com/v1/chat/completions")
     exc = APIConnectionError(request=request)
     result = _classify_openai_exception(exc)
     assert isinstance(result, LLMServiceUnavailableError)
@@ -195,7 +205,7 @@ async def test_ask_gpt_tool_call_then_answer_exactly_two_calls():
     }
 
     with patch(
-        "src.services.llm.client.responses.create", side_effect=fake_create
+        "src.services.llm.client.chat.completions.create", side_effect=fake_create
     ), patch(
         "src.tools.registry.registry.execute",
         AsyncMock(return_value=fake_tool_output),
@@ -215,13 +225,13 @@ async def test_ask_gpt_tool_call_then_answer_exactly_two_calls():
 
     # Verify the second request actually carried the tool result back to the model
     assert len(captured_kwargs) == 2
-    second_input = captured_kwargs[1]["input"]
-    input_types = [
-        item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
-        for item in second_input
+    second_messages = captured_kwargs[1]["messages"]
+    roles = [
+        msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+        for msg in second_messages
     ]
-    assert "function_call_output" in input_types, (
-        "Second Responses API request must include the function_call_output item"
+    assert "tool" in roles, (
+        "Second ChatCompletions API request must include the tool role item"
     )
 
 
@@ -246,7 +256,7 @@ async def test_ask_gpt_tool_call_then_answer_does_not_loop_idly():
     }
 
     with patch(
-        "src.services.llm.client.responses.create", side_effect=fake_create
+        "src.services.llm.client.chat.completions.create", side_effect=fake_create
     ), patch(
         "src.tools.registry.registry.execute",
         AsyncMock(return_value=fake_tool_output),
@@ -266,7 +276,7 @@ async def test_ask_gpt_tool_call_then_answer_does_not_loop_idly():
 @pytest.mark.asyncio
 async def test_ask_gpt_500_raises_service_unavailable():
     with patch(
-        "src.services.llm.client.responses.create",
+        "src.services.llm.client.chat.completions.create",
         side_effect=_api_status_error(502, "Bad Gateway"),
     ):
         with pytest.raises(LLMServiceUnavailableError, match="502"):
@@ -278,7 +288,7 @@ async def test_ask_gpt_500_raises_service_unavailable():
 @pytest.mark.asyncio
 async def test_ask_gpt_422_raises_generic_llm_error():
     with patch(
-        "src.services.llm.client.responses.create",
+        "src.services.llm.client.chat.completions.create",
         side_effect=_api_status_error(422, "Unprocessable Entity"),
     ):
         with pytest.raises(LLMError, match="422"):
@@ -294,8 +304,8 @@ async def test_tool_execution_failure_propagates():
     response_with_tool = _make_response(output_text="", tool_calls=[tool_call])
 
     with patch(
-        "src.services.llm.client.responses.create",
-        return_value=response_with_tool,
+        "src.services.llm.client.chat.completions.create",
+        AsyncMock(return_value=response_with_tool),
     ), patch(
         "src.tools.registry.registry.execute",
         side_effect=RuntimeError("tool boom"),

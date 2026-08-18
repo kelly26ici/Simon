@@ -275,9 +275,9 @@ class TestRetry:
 
     def test_empty_body_retries_three_times(self):
         client = _client(
-            _resp(200, ctype="audio/ogg", content=b=""),
-            _resp(200, ctype="audio/ogg", content=b=""),
-            _resp(200, ctype="audio/ogg", content=b=""),
+            _resp(200, ctype="audio/ogg", content=b""),
+            _resp(200, ctype="audio/ogg", content=b""),
+            _resp(200, ctype="audio/ogg", content=b""),
         )
         r = self._call("media_123", client)
         assert r.error == _EMPTY
