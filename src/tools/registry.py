@@ -23,7 +23,7 @@ class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, Tool] = {}
 
-    def register(self, name: str, schema: Type[BaseModel], *, strict: bool = True):
+    def register(self, name: str, schema: Type[BaseModel], *, strict: bool = False):
         """
         Decorator used to register a tool.
         Example:
@@ -45,8 +45,10 @@ class ToolRegistry:
                 "name": name,
                 "description": (func.__doc__ or "").strip(),
                 "parameters": params_schema,
-                "strict": strict,
             }
+            if strict:
+                declaration["strict"] = True
+
             self._tools[name] = Tool(name=name, schema=schema, handler=func, declaration=declaration)
             logger.success("Registered tool '{}'.", name)
             return func
@@ -55,6 +57,10 @@ class ToolRegistry:
     def get_llm_declarations(self) -> list[dict[str, Any]]:
         """Returns tool definitions in Responses API format."""
         return [tool.declaration for tool in self._tools.values()]
+
+    def get_registered_tool_names(self) -> list[str]:
+        """Returns the list of registered tool names."""
+        return list(self._tools.keys())
 
     def get(self, name: str) -> Tool:
         """Returns a registered tool."""

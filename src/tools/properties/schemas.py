@@ -163,6 +163,15 @@ class SemanticSearchSchema(BaseModel):
         ge=0,
         description="Optional maximum price filter in KES",
     )
+    location: Optional[str] = Field(
+        default=None,
+        description="Optional neighborhood or area filter (e.g. 'Kilimani', 'Westlands', 'Karen')",
+    )
+    bedrooms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Optional exact number of bedrooms filter",
+    )
     city: Optional[str] = Field(
         default=None,
         description="Optional city filter",
@@ -177,7 +186,18 @@ class SemanticSearchSchema(BaseModel):
     )
 
 
-# ── Tool 3: Property Comparison ──────────────────────────────────────────────
+# ── Tool 3: Property Details ─────────────────────────────────────────────────
+
+class GetPropertyDetailsSchema(BaseModel):
+    """Input for the get_property_details tool."""
+
+    property_id: str = Field(
+        ...,
+        description="The unique UUID of the property to retrieve complete details, images, and contact for.",
+    )
+
+
+# ── Tool 4: Property Comparison ──────────────────────────────────────────────
 
 class ComparePropertiesSchema(BaseModel):
     """Input for the compare_properties tool — side-by-side comparison."""

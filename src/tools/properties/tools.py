@@ -17,10 +17,38 @@ from src.tools.registry import registry
 from src.tools.properties.schemas import (
     SearchPropertiesSchema,
     SemanticSearchSchema,
+    GetPropertyDetailsSchema,
     ComparePropertiesSchema,
 )
 from src.tools.properties import semantic_search
 from src.services.db import db
+
+
+def _summarize_property(p: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract a concise, token-efficient summary of a property for search result listings."""
+    amenities = p.get("amenities", [])
+    if isinstance(amenities, list):
+        amenities = amenities[:6]
+    images = p.get("images", [])
+    first_image = images[0] if isinstance(images, list) and images else None
+
+    summary = {
+        "id": str(p.get("id", "")),
+        "title": p.get("title", ""),
+        "price": p.get("price", 0),
+        "currency": p.get("currency", "KES"),
+        "bedrooms": p.get("bedrooms"),
+        "bathrooms": p.get("bathrooms"),
+        "property_type": p.get("property_type"),
+        "listing_type": p.get("listing_type"),
+        "location": p.get("location", ""),
+        "city": p.get("city", "Nairobi"),
+        "amenities": amenities,
+        "image": first_image,
+    }
+    if "score" in p:
+        summary["score"] = p["score"]
+    return summary
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -41,7 +69,7 @@ async def search_properties(payload: SearchPropertiesSchema) -> Dict[str, Any]:
     Do NOT use this for vague or lifestyle-based queries like "a cozy family
     home" — use semantic_search_properties for those instead.
 
-    Returns a paginated list of matching properties with all details.
+    Returns a paginated list of matching properties with concise summary details.
     """
     filters: Dict[str, Any] = {}
 
@@ -100,11 +128,13 @@ async def search_properties(payload: SearchPropertiesSchema) -> Dict[str, Any]:
             ),
         }
 
+    summaries = [_summarize_property(p) for p in results]
+
     return {
-        "total": len(results),
+        "total": len(summaries),
         "limit": payload.limit,
         "offset": payload.offset,
-        "results": results,
+        "results": summaries,
     }
 
 
@@ -139,8 +169,10 @@ async def semantic_search_properties(payload: SemanticSearchSchema) -> Dict[str,
             price_min=payload.min_price,
             price_max=payload.max_price,
             city=payload.city,
+            location=payload.location,
             property_type=payload.property_type.value if payload.property_type else None,
             listing_type=payload.listing_type.value if payload.listing_type else None,
+            bedrooms=payload.bedrooms,
         )
     except Exception as exc:
         logger.exception("Semantic property search failed")
@@ -163,15 +195,77 @@ async def semantic_search_properties(payload: SemanticSearchSchema) -> Dict[str,
             "results": [],
         }
 
+    summaries = [_summarize_property(p) for p in results]
+
     return {
-        "total": len(results),
+        "total": len(summaries),
         "query": payload.query,
-        "results": results,
+        "results": summaries,
     }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Tool 3: Property Comparison
+# Tool 3: Get Property Details
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@registry.register("get_property_details", GetPropertyDetailsSchema)
+async def get_property_details(payload: GetPropertyDetailsSchema) -> Dict[str, Any]:
+    """
+    Retrieve complete information about a specific property by its UUID.
+
+    Returns:
+    - Full title, detailed description, location, price, and currency.
+    - Detailed bedroom, bathroom, square meters, year built, and floor details.
+    - Complete amenities list, furnished status, parking spots, garden, pool.
+    - Media links (high-resolution photo URLs, virtual tour links).
+    - Assigned agent name, phone number, and email.
+
+    Use this when a customer asks for more info or photos about a specific property
+    discovered in search results.
+    """
+    logger.info("Fetching details for property ID: {}", payload.property_id)
+    prop = await db.get_property_by_id(payload.property_id)
+    if not prop:
+        return {
+            "error": f"Property with ID '{payload.property_id}' was not found. It may have been sold or removed.",
+        }
+
+    return {
+        "status": "success",
+        "property": {
+            "id": str(prop["id"]),
+            "title": prop.get("title"),
+            "description": prop.get("description"),
+            "property_type": prop.get("property_type"),
+            "listing_type": prop.get("listing_type"),
+            "price": float(prop.get("price", 0)),
+            "currency": prop.get("currency", "KES"),
+            "price_per_sqm": prop.get("price_per_sqm"),
+            "bedrooms": prop.get("bedrooms"),
+            "bathrooms": prop.get("bathrooms"),
+            "square_meters": prop.get("square_meters"),
+            "location": prop.get("location"),
+            "city": prop.get("city"),
+            "county": prop.get("county"),
+            "amenities": prop.get("amenities", []),
+            "furnished": prop.get("furnished", False),
+            "parking_spots": prop.get("parking_spots", 0),
+            "has_garden": prop.get("has_garden", False),
+            "has_swimming_pool": prop.get("has_swimming_pool", False),
+            "pet_friendly": prop.get("pet_friendly", False),
+            "gated_community": prop.get("gated_community", False),
+            "images": prop.get("images", []),
+            "video_url": prop.get("video_url"),
+            "virtual_tour_url": prop.get("virtual_tour_url"),
+            "agent_name": prop.get("agent_name"),
+            "agent_phone": prop.get("agent_phone"),
+            "agent_email": prop.get("agent_email"),
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Tool 4: Property Comparison
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @registry.register("compare_properties", ComparePropertiesSchema)

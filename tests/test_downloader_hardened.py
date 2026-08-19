@@ -23,6 +23,7 @@ from src.messages.downloader import (
     _fetch_audio_bytes,
     _media_url,
     _resolve_media_url,
+    _download_attempt,
     download_media_bytes,
 )
 
@@ -255,12 +256,8 @@ class TestFetchAudioBytes:
 
 class TestRetry:
 
-    # Use tenacity's __wrapped__ to bypass the decorator's retry loop
-    # and call the underlying function directly (avoids asyncio.run nesting).
-    _orig = download_media_bytes.__wrapped__
-
     def _call(self, media_id, client):
-        return _run(self._orig(media_id, client))
+        return _run(_download_attempt(media_id, client))
 
     def test_transport_error_retries_three_times(self):
         client = _client(
@@ -271,18 +268,20 @@ class TestRetry:
         r = self._call("media_123", client)
         assert r.error == _XPORT
         assert client.get.call_count == 3
-        client.aclose.assert_called_once()
 
     def test_empty_body_retries_three_times(self):
+        temp_url = "https://cdn.example.com/tmp/x"
         client = _client(
+            _resp(200, json_body={"url": temp_url}),
             _resp(200, ctype="audio/ogg", content=b""),
+            _resp(200, json_body={"url": temp_url}),
             _resp(200, ctype="audio/ogg", content=b""),
+            _resp(200, json_body={"url": temp_url}),
             _resp(200, ctype="audio/ogg", content=b""),
         )
         r = self._call("media_123", client)
         assert r.error == _EMPTY
-        assert client.get.call_count == 3
-        client.aclose.assert_called_once()
+        assert client.get.call_count == 6
 
     def test_500_retries_three_times(self):
         client = _client(
@@ -291,28 +290,24 @@ class TestRetry:
         r = self._call("media_123", client)
         assert r.error == _DL
         assert client.get.call_count == 3
-        client.aclose.assert_called_once()
 
     def test_400_no_retry_single_attempt(self):
         client = _client(_resp(400))
         r = self._call("media_123", client)
         assert r.error == _INVALID
         assert client.get.call_count == 1
-        client.aclose.assert_called_once()
 
     def test_401_no_retry_single_attempt(self):
         client = _client(_resp(401))
         r = self._call("media_123", client)
         assert r.error == _AUTH
         assert client.get.call_count == 1
-        client.aclose.assert_called_once()
 
     def test_429_no_retry_single_attempt(self):
         client = _client(_resp(429))
         r = self._call("media_123", client)
         assert r.error == _RATE
         assert client.get.call_count == 1
-        client.aclose.assert_called_once()
 
     def test_success_after_two_transient_failures(self):
         """Two timeouts then success: 4 total HTTP calls, bytes returned."""
@@ -324,9 +319,8 @@ class TestRetry:
             _resp(200, ctype="audio/ogg", content=b"data"),
         )
         r = self._call("media_123", client)
-        assert r == b"data"
+        assert r.data == b"data"
         assert client.get.call_count == 4
-        client.aclose.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -356,73 +350,74 @@ class TestPermanentErrors:
 
 # ---------------------------------------------------------------------------
 # End-to-end: download_media_bytes orchestration
-# (patches the httpx.AsyncClient constructor so download_media_bytes creates
-# the fake client rather than making real HTTP calls)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.asyncio
 class TestDownloadMediaBytes:
 
-    def setup_method(self):
-        self._loop = asyncio.get_event_loop()
-
-    def _call(self, media_id, mock_client):
+    async def _call(self, media_id, mock_client):
         with patch(
             "src.messages.downloader.httpx.AsyncClient",
             return_value=mock_client,
         ):
-            return self._loop.run_until_complete(
-                download_media_bytes(media_id)
-            )
+            return await download_media_bytes(media_id)
 
-    def test_full_success_returns_bytes(self):
+    async def test_full_success_returns_bytes(self):
         temp_url = "https://cdn.example.com/tmp/abc"
         client = _client(
             _resp(200, json_body={"url": temp_url}),
             _resp(200, ctype="audio/ogg", content=b"ogg-bytes"),
         )
-        result = self._call("media_123", client)
+        result = await self._call("media_123", client)
         assert result == b"ogg-bytes"
         assert client.get.call_count == 2
         client.aclose.assert_called_once()
 
-    def test_aclose_on_success(self):
+    async def test_aclose_on_success(self):
         temp_url = "https://cdn.example.com/tmp/abc"
         client = _client(
             _resp(200, json_body={"url": temp_url}),
             _resp(200, ctype="audio/ogg", content=b"data"),
         )
-        self._call("media_123", client)
+        await self._call("media_123", client)
         client.aclose.assert_called_once()
 
-    def test_step1_404_stops_before_step2(self):
+    async def test_step1_404_stops_before_step2(self):
         client = _client(_resp(404))
-        result = self._call("media_123", client)
+        result = await self._call("media_123", client)
         assert result is None
         assert client.get.call_count == 1
 
-    def test_step1_missing_url_stops_before_step2(self):
-        client = _client(_resp(200, json_body={}))
-        result = self._call("media_123", client)
+    async def test_step1_missing_url_stops_before_step2(self):
+        client = _client(
+            _resp(200, json_body={}),
+            _resp(200, json_body={}),
+            _resp(200, json_body={}),
+        )
+        result = await self._call("media_123", client)
         assert result is None
-        assert client.get.call_count == 1
+        assert client.get.call_count == 3
 
-    def test_non_json_step1_returns_none(self):
-        client = _client(_resp(200, ctype="text/html",
-                               text="err", content=b"err"))
-        result = self._call("media_123", client)
+    async def test_non_json_step1_returns_none(self):
+        client = _client(
+            _resp(200, ctype="text/html", text="err", content=b"err"),
+            _resp(200, ctype="text/html", text="err", content=b"err"),
+            _resp(200, ctype="text/html", text="err", content=b"err"),
+        )
+        result = await self._call("media_123", client)
         assert result is None
 
-    def test_aclose_on_step1_failure(self):
-        client = _client(_resp(500))
-        self._call("media_123", client)
+    async def test_aclose_on_step1_failure(self):
+        client = _client(_resp(400))
+        await self._call("media_123", client)
         client.aclose.assert_called_once()
 
-    def test_aclose_on_exhausted_retries(self):
+    async def test_aclose_on_exhausted_retries(self):
         client = _client(_resp(500), _resp(500), _resp(500))
-        self._call("media_123", client)
+        await self._call("media_123", client)
         client.aclose.assert_called_once()
 
-    def test_retry_on_transient_then_success(self):
+    async def test_retry_on_transient_then_success(self):
         temp_url = "https://cdn.example.com/tmp/x"
         client = _client(
             httpx.TimeoutException("boom"),
@@ -430,7 +425,7 @@ class TestDownloadMediaBytes:
             _resp(200, json_body={"url": temp_url}),
             _resp(200, ctype="audio/ogg", content=b"data"),
         )
-        result = self._call("media_123", client)
+        result = await self._call("media_123", client)
         assert result == b"data"
         assert client.get.call_count == 4
         client.aclose.assert_called_once()

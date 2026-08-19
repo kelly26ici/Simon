@@ -1,3 +1,6 @@
 # src/configs/constants.py
-GROQ_MODEL="openai/gpt-oss-120b"
-GEMINI_MODEL = "gemini-3.5-flash"
+GROQ_MODEL = "groq/compound"
+GROQ_FALLBACK_MODEL = "openai/gpt-oss-20b"
+OPENROUTER_MODEL = "openai/gpt-4o-mini"
+NVIDIA_MODEL = "stepfun-ai/step-3.7-flash"
+GEMINI_MODEL = "gemini-2.5-flash"

@@ -1,18 +1,12 @@
 """
 Property embedding pipeline — embeds property descriptions and indexes them
 in Qdrant for semantic search.
-
-Flow:
-1. Fetch properties from Supabase
-2. Build a rich text representation for each property
-3. Embed via Cloudflare Workers AI
-4. Upsert into Qdrant with payload (id, price, bedrooms, location, etc.)
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from loguru import logger
 from qdrant_client.http.models import FieldCondition, Filter, MatchValue, PointStruct, Range
@@ -22,52 +16,124 @@ from src.tools.qdrant import client as qdrant_client, make_collection
 from src.services.db import db
 
 PROPERTIES_COLLECTION = "properties"
-VECTOR_SIZE = 1024  # Cloudflare qwen3-embedding-0.6b outputs 1024-dim vectors
-BATCH_SIZE = 20  # Cloudflare free tier limit per request
+VECTOR_SIZE = 1024  # Cloudflare qwen3-embedding-0.6b / bge-large outputs 1024-dim vectors
+BATCH_SIZE = 20  # Cloudflare per-request batch limit
 
 
 def _build_property_text(prop: Dict[str, Any]) -> str:
-    """Build a rich, searchable text representation of a property."""
+    """Build a rich, searchable text representation of a property with full semantic context."""
+    title = prop.get("title", "")
+    p_type = prop.get("property_type", "")
+    l_type = prop.get("listing_type", "")
+    loc = prop.get("location", "")
+    city = prop.get("city", "Nairobi")
+    price = prop.get("price", "")
+    currency = prop.get("currency", "KES")
+
     parts = [
-        f"{prop.get('title', '')}",
-        f"Type: {prop.get('property_type', '')}",
-        f"Listing: {prop.get('listing_type', '')}",
-        f"Location: {prop.get('location', '')}, {prop.get('city', '')}",
-        f"Price: {prop.get('price', '')} {prop.get('currency', 'KES')}",
+        f"Title: {title}",
+        f"Property Type: {p_type}",
+        f"Listing: {l_type}",
+        f"Location: {loc}, {city}",
+        f"Price: {price} {currency}",
     ]
 
-    if prop.get("bedrooms"):
-        parts.append(f"Bedrooms: {prop['bedrooms']}")
-    if prop.get("bathrooms"):
-        parts.append(f"Bathrooms: {prop['bathrooms']}")
+    if prop.get("bedrooms") is not None:
+        parts.append(f"{prop['bedrooms']} Bedrooms")
+    if prop.get("bathrooms") is not None:
+        parts.append(f"{prop['bathrooms']} Bathrooms")
     if prop.get("square_meters"):
-        parts.append(f"Size: {prop['square_meters']} sqm")
+        parts.append(f"Size: {prop['square_meters']} square meters")
     if prop.get("lot_size_sqm"):
-        parts.append(f"Lot: {prop['lot_size_sqm']} sqm")
-    if prop.get("year_built"):
-        parts.append(f"Year built: {prop['year_built']}")
+        parts.append(f"Land/Lot: {prop['lot_size_sqm']} square meters")
     if prop.get("furnished"):
-        parts.append("Furnished")
+        parts.append("Fully furnished")
     if prop.get("parking_spots"):
-        parts.append(f"Parking: {prop['parking_spots']} spots")
+        parts.append(f"Parking: {prop['parking_spots']} dedicated spaces")
     if prop.get("amenities"):
-        parts.append(f"Amenities: {', '.join(prop['amenities'])}")
+        amenities_str = ", ".join(prop["amenities"]) if isinstance(prop["amenities"], list) else str(prop["amenities"])
+        parts.append(f"Key Amenities: {amenities_str}")
     if prop.get("has_garden"):
-        parts.append("Has garden")
+        parts.append("Features a lush private garden")
     if prop.get("has_swimming_pool"):
-        parts.append("Has swimming pool")
+        parts.append("Has a swimming pool")
     if prop.get("pet_friendly"):
-        parts.append("Pet friendly")
+        parts.append("Pet friendly property")
     if prop.get("gated_community"):
-        parts.append("Gated community")
+        parts.append("Located inside a secure gated community")
 
-    parts.append(f"Description: {prop.get('description', '')}")
+    desc = prop.get("description", "")
+    if desc:
+        parts.append(f"Overview: {desc}")
 
     return " | ".join(parts)
 
 
+def _build_point_payload(prop: Dict[str, Any]) -> Dict[str, Any]:
+    """Extracts indexed and metadata payload for a Qdrant point."""
+    return {
+        "title": prop.get("title", ""),
+        "description": prop.get("description", ""),
+        "property_type": str(prop.get("property_type", "")),
+        "listing_type": str(prop.get("listing_type", "")),
+        "price": float(prop.get("price", 0)),
+        "currency": prop.get("currency", "KES"),
+        "bedrooms": int(prop.get("bedrooms", 0) or 0),
+        "bathrooms": int(prop.get("bathrooms", 0) or 0),
+        "square_meters": float(prop.get("square_meters", 0) or 0),
+        "location": prop.get("location", ""),
+        "city": prop.get("city", "Nairobi"),
+        "amenities": prop.get("amenities", []) if isinstance(prop.get("amenities"), list) else [],
+        "furnished": bool(prop.get("furnished", False)),
+        "has_garden": bool(prop.get("has_garden", False)),
+        "has_swimming_pool": bool(prop.get("has_swimming_pool", False)),
+        "images": prop.get("images", []) if isinstance(prop.get("images"), list) else [],
+        "agent_name": prop.get("agent_name", ""),
+        "agent_phone": prop.get("agent_phone", ""),
+        "status": prop.get("status", "available"),
+    }
+
+
+async def index_property(property_data: Union[str, Dict[str, Any]]) -> bool:
+    """Index or update a single property in Qdrant."""
+    await make_collection(PROPERTIES_COLLECTION)
+
+    if isinstance(property_data, str):
+        prop = await db.get_property_by_id(property_data)
+        if not prop:
+            logger.warning("Cannot index property {}: not found in DB", property_data)
+            return False
+    else:
+        prop = property_data
+
+    prop_id = str(prop.get("id"))
+    text = _build_property_text(prop)
+
+    try:
+        embeddings = await get_embeddings([text])
+        if not embeddings:
+            logger.error("Failed to generate embedding for property {}", prop_id)
+            return False
+
+        point = PointStruct(
+            id=prop_id,
+            vector=embeddings[0],
+            payload=_build_point_payload(prop),
+        )
+        await qdrant_client.upsert(
+            collection_name=PROPERTIES_COLLECTION,
+            points=[point],
+            wait=True,
+        )
+        logger.info("Indexed property '{}' ({}) in Qdrant", prop.get("title"), prop_id)
+        return True
+    except Exception as exc:
+        logger.exception("Failed to index property {} in Qdrant: {}", prop_id, exc)
+        return False
+
+
 async def index_all_properties() -> int:
-    """Fetch all available properties from Supabase, embed them, and upsert into Qdrant."""
+    """Fetch all available properties from Supabase, embed them in batches, and upsert into Qdrant."""
     await make_collection(PROPERTIES_COLLECTION)
 
     properties = await db.search_properties(status="available")
@@ -76,6 +142,7 @@ async def index_all_properties() -> int:
         return 0
 
     logger.info("Indexing {} properties into Qdrant...", len(properties))
+    indexed_count = 0
 
     for i in range(0, len(properties), BATCH_SIZE):
         batch = properties[i : i + BATCH_SIZE]
@@ -83,6 +150,9 @@ async def index_all_properties() -> int:
 
         try:
             embeddings = await get_embeddings(texts)
+            if not embeddings or len(embeddings) != len(batch):
+                logger.error("Embedding batch mismatch for batch index {}", i)
+                continue
         except Exception:
             logger.exception("Embedding batch {} failed, skipping.", i // BATCH_SIZE)
             continue
@@ -90,21 +160,13 @@ async def index_all_properties() -> int:
         points = []
         for prop, vector in zip(batch, embeddings):
             prop_id = str(prop["id"])
-            payload = {
-                "title": prop.get("title", ""),
-                "property_type": prop.get("property_type", ""),
-                "listing_type": prop.get("listing_type", ""),
-                "price": float(prop.get("price", 0)),
-                "bedrooms": prop.get("bedrooms", 0) or 0,
-                "bathrooms": prop.get("bathrooms", 0) or 0,
-                "square_meters": float(prop.get("square_meters", 0) or 0),
-                "location": prop.get("location", ""),
-                "city": prop.get("city", ""),
-                "amenities": prop.get("amenities", []),
-                "furnished": prop.get("furnished", False),
-                "status": prop.get("status", "available"),
-            }
-            points.append(PointStruct(id=prop_id, vector=vector, payload=payload))
+            points.append(
+                PointStruct(
+                    id=prop_id,
+                    vector=vector,
+                    payload=_build_point_payload(prop),
+                )
+            )
 
         if points:
             await qdrant_client.upsert(
@@ -112,9 +174,11 @@ async def index_all_properties() -> int:
                 points=points,
                 wait=True,
             )
+            indexed_count += len(points)
+            logger.success("Indexed batch of {} properties.", len(points))
 
-        logger.success("Indexed {} properties.", len(points))
-    return len(properties)
+    logger.success("Completed Qdrant indexing: total {} properties.", indexed_count)
+    return indexed_count
 
 
 async def delete_property_index(property_id: str) -> bool:
@@ -125,12 +189,11 @@ async def delete_property_index(property_id: str) -> bool:
             points_selector=[property_id],
             wait=True,
         )
+        logger.success("Removed property {} from Qdrant index.", property_id)
+        return True
     except Exception:
         logger.exception("Failed to delete property {} from Qdrant", property_id)
         return False
-
-    logger.success("Removed property {} from Qdrant index.", property_id)
-    return True
 
 
 async def semantic_search(
@@ -139,14 +202,19 @@ async def semantic_search(
     price_min: Optional[float] = None,
     price_max: Optional[float] = None,
     city: Optional[str] = None,
+    location: Optional[str] = None,
     property_type: Optional[str] = None,
     listing_type: Optional[str] = None,
+    bedrooms: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """Search properties semantically using Qdrant."""
+    """Search properties semantically using Qdrant vector similarity with metadata filters."""
     await ensure_collection(PROPERTIES_COLLECTION)
 
     try:
         embeddings = await get_embeddings([query])
+        if not embeddings:
+            logger.warning("Could not compute embeddings for query: '{}'", query)
+            return []
     except Exception:
         logger.exception("Failed to embed search query")
         return []
@@ -159,10 +227,17 @@ async def semantic_search(
         must_filters.append(FieldCondition(key="price", range=price_range))
     if city:
         must_filters.append(FieldCondition(key="city", match=MatchValue(value=city)))
+    if location:
+        must_filters.append(FieldCondition(key="location", match=MatchValue(value=location)))
     if property_type:
         must_filters.append(FieldCondition(key="property_type", match=MatchValue(value=property_type)))
     if listing_type:
         must_filters.append(FieldCondition(key="listing_type", match=MatchValue(value=listing_type)))
+    if bedrooms is not None:
+        must_filters.append(FieldCondition(key="bedrooms", match=MatchValue(value=bedrooms)))
+
+    # Only available properties
+    must_filters.append(FieldCondition(key="status", match=MatchValue(value="available")))
 
     qdrant_filter = Filter(must=must_filters) if must_filters else None
 
@@ -177,7 +252,7 @@ async def semantic_search(
 
     return [
         {
-            "id": hit.id,
+            "id": str(hit.id),
             "score": round(hit.score, 4),
             **hit.payload,
         }
@@ -187,3 +262,4 @@ async def semantic_search(
 
 # Re-export for convenience
 from src.tools.qdrant import make_collection as ensure_collection
+

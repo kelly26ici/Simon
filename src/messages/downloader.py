@@ -70,6 +70,15 @@ class MediaError(str, Enum):
     EMPTY_BODY = "empty_body"               # 2xx but 0 bytes
 
 
+# Module-level aliases for backwards compatibility and easy importing
+INVALID_MEDIA_ID = MediaError.INVALID_MEDIA_ID
+AUTH_FAILED = MediaError.AUTH_FAILED
+RATE_LIMITED = MediaError.RATE_LIMITED
+DOWNLOAD_FAILED = MediaError.DOWNLOAD_FAILED
+TRANSPORT_ERROR = MediaError.TRANSPORT_ERROR
+EMPTY_BODY = MediaError.EMPTY_BODY
+
+
 PERMANENT_ERRORS: frozenset[MediaError] = frozenset(
     {
         MediaError.INVALID_MEDIA_ID,
@@ -333,7 +342,7 @@ async def _download_with_client(
     retry=retry_if_result(_retry_predicate),
     stop=_RETRY_STOP,
     wait=_RETRY_WAIT,
-    reraise=True,
+    retry_error_callback=lambda retry_state: retry_state.outcome.result(),
 )
 async def _download_attempt(
     media_id: str,

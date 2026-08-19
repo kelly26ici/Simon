@@ -33,3 +33,8 @@ class FlagForSummarySchema(BaseModel):
 class CheckPaymentHistorySchema(BaseModel):
     """Input for check_payment_history tool."""
     phone_number: str = Field(..., description="The customer's WhatsApp ID/phone number")
+
+
+class GetCustomerPreferencesSchema(BaseModel):
+    """Input for get_customer_preferences tool."""
+    phone_number: str = Field(..., description="The customer's WhatsApp ID/phone number")

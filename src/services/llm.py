@@ -1,22 +1,34 @@
 # src/services/llm.py
 
+from __future__ import annotations
+
 import os
-from openai import AsyncOpenAI, RateLimitError, APIStatusError, APIConnectionError, APIError
+from typing import Any, List, Optional, Tuple
+from openai import (
+    AsyncOpenAI,
+    RateLimitError,
+    APIStatusError,
+    APIConnectionError,
+    APIError,
+    AuthenticationError,
+    PermissionDeniedError,
+    NotFoundError,
+    BadRequestError,
+)
 from loguru import logger
 
 from src.configs.prompts import system_prompt
-from src.configs.settings import NVIDIA_API_KEY
-from src.tools.registry import registry
-
-
-client = AsyncOpenAI(
-    api_key=NVIDIA_API_KEY,
-    base_url="https://integrate.api.nvidia.com/v1",
+from src.configs.settings import (
+    NVIDIA_API_KEY,
+    GROQ_API_KEY,
+    OPENROUTER_API_KEY,
+    LLM_PROVIDER,
+    LLM_BASE_URL,
+    LLM_API_KEY,
+    LLM_MODEL,
 )
-
-MODEL_NAME = os.getenv("LLM_MODEL", "stepfun-ai/step-3.7-flash")
-MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "32768"))
-MAX_TOOL_ITERATIONS = int(os.getenv("LLM_MAX_TOOL_ITERATIONS", "10"))
+from src.configs.constants import GROQ_MODEL, OPENROUTER_MODEL, NVIDIA_MODEL
+from src.tools.registry import registry
 
 
 class LLMRateLimitError(Exception):
@@ -27,13 +39,71 @@ class LLMServiceUnavailableError(Exception):
     """Raised when the upstream LLM is unreachable or returns 5xx."""
 
 
+class LLMAuthenticationError(Exception):
+    """Raised when the upstream LLM returns 401/403 (invalid key or forbidden/credits exhausted)."""
+
+
 class LLMError(Exception):
     """Generic fallback for unexpected LLM/API failures."""
 
 
+def resolve_llm_config() -> Tuple[str, str, str, str]:
+    """
+    Resolves the (provider, base_url, api_key, model_name) to use based on configuration
+    and available API keys.
+
+    Priority:
+    1. Explicit custom LLM_BASE_URL + LLM_API_KEY
+    2. Explicit LLM_PROVIDER environment variable
+    3. Auto-detection: OpenRouter (full tool-call support + high TPM) → Groq → NVIDIA
+    """
+    # 1. Custom explicit configuration
+    if LLM_BASE_URL and LLM_API_KEY:
+        model = LLM_MODEL or "gpt-4o-mini"
+        return "custom", LLM_BASE_URL, LLM_API_KEY, model
+
+    # 2. Explicit provider selection
+    provider = (LLM_PROVIDER or "").lower().strip()
+    if provider == "groq" and GROQ_API_KEY:
+        return "groq", "https://api.groq.com/openai/v1", GROQ_API_KEY, LLM_MODEL or GROQ_MODEL
+    if provider == "openrouter" and OPENROUTER_API_KEY:
+        return "openrouter", "https://openrouter.ai/api/v1", OPENROUTER_API_KEY, LLM_MODEL or OPENROUTER_MODEL
+    if provider == "nvidia" and NVIDIA_API_KEY:
+        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
+
+    # 3. Auto-detection priority:
+    # OpenRouter → Groq → NVIDIA
+    # OpenRouter is preferred: broader model support, full function-calling spec, no strict TPM
+    if OPENROUTER_API_KEY:
+        return "openrouter", "https://openrouter.ai/api/v1", OPENROUTER_API_KEY, LLM_MODEL or OPENROUTER_MODEL
+    if GROQ_API_KEY:
+        return "groq", "https://api.groq.com/openai/v1", GROQ_API_KEY, LLM_MODEL or GROQ_MODEL
+    if NVIDIA_API_KEY:
+        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
+
+    # Default fallback
+    return "groq", "https://api.groq.com/openai/v1", "", LLM_MODEL or GROQ_MODEL
+
+
+_active_provider, _active_base_url, _active_key, _active_model = resolve_llm_config()
+
+# Module-level client (used by default and patched by unit tests)
+client = AsyncOpenAI(
+    api_key=_active_key or "missing_key",
+    base_url=_active_base_url,
+)
+
+MODEL_NAME = _active_model
+MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096"))
+MAX_TOOL_ITERATIONS = int(os.getenv("LLM_MAX_TOOL_ITERATIONS", "10"))
+
+
 def _classify_openai_exception(exc: Exception) -> Exception:
+    """Map upstream OpenAI exceptions into semantic application error classes."""
     if isinstance(exc, RateLimitError):
-        return LLMRateLimitError(f"NVIDIA API rate limited: {exc}")
+        return LLMRateLimitError(f"LLM API rate limited: {exc}")
+    if isinstance(exc, (AuthenticationError, PermissionDeniedError)):
+        return LLMAuthenticationError(f"LLM API authentication/permission error: {exc}")
     if isinstance(exc, APIStatusError):
         status = getattr(exc, "status_code", None)
         body = ""
@@ -41,24 +111,30 @@ def _classify_openai_exception(exc: Exception) -> Exception:
             body = exc.response.text if exc.response is not None else ""
         except Exception:
             body = ""
+        if status in (401, 403):
+            return LLMAuthenticationError(f"LLM API forbidden/unauthorized {status}: {body}".strip())
         if status and status >= 500:
             return LLMServiceUnavailableError(
-                f"NVIDIA API server error {status}: {body}".strip()
+                f"LLM API server error {status}: {body}".strip()
             )
-        return LLMError(f"NVIDIA API status error {status}: {body}".strip())
+        return LLMError(f"LLM API status error {status}: {body}".strip())
     if isinstance(exc, APIConnectionError):
-        return LLMServiceUnavailableError(f"NVIDIA API connection error: {exc}")
+        return LLMServiceUnavailableError(f"LLM API connection error: {exc}")
     if isinstance(exc, APIError):
-        return LLMError(f"NVIDIA API error: {exc}")
+        return LLMError(f"LLM API error: {exc}")
     return LLMError(f"Unexpected LLM error: {exc}")
 
 
-def _build_openai_messages(history: list[dict]) -> list[dict]:
-    """Builds standard OpenAI Chat Completion messages from history."""
+def _build_openai_messages(history: list[dict], customer_context: Optional[str] = None) -> list[dict]:
+    """Builds standard OpenAI Chat Completion messages from history with dynamic customer context."""
+    sys_content = system_prompt
+    if customer_context:
+        sys_content += f"\n\n--- CURRENT CONVERSATION CONTEXT ---\n{customer_context}"
+
     messages = [
         {
             "role": "system",
-            "content": system_prompt,
+            "content": sys_content,
         }
     ]
     for item in history:
@@ -81,10 +157,21 @@ def _build_openai_messages(history: list[dict]) -> list[dict]:
         else:
             content_str = str(content) if content is not None else ""
 
-        msg_dict = {"role": role, "content": content_str}
+        msg_dict: dict[str, Any] = {"role": role}
+
+        # For assistant messages with tool calls, content can be None
+        if role == "assistant" and "tool_calls" in item and not content_str:
+            msg_dict["content"] = None
+        else:
+            msg_dict["content"] = content_str
 
         if "tool_calls" in item:
-            msg_dict["tool_calls"] = item["tool_calls"]
+            # Ensure tool_calls are serialized dicts
+            raw_calls = item["tool_calls"]
+            msg_dict["tool_calls"] = [
+                tc.model_dump() if hasattr(tc, "model_dump") else tc
+                for tc in raw_calls
+            ]
         if "tool_call_id" in item:
             msg_dict["tool_call_id"] = item["tool_call_id"]
         if "name" in item:
@@ -120,10 +207,14 @@ def _format_tools(tools: list[dict]) -> list[dict]:
     return formatted
 
 
-async def ask_gpt(history: list[dict], max_tool_iterations: int = MAX_TOOL_ITERATIONS):
-    """Sends conversation history to NVIDIA NIM Chat Completions API with automatic tool execution."""
+async def ask_gpt(
+    history: list[dict],
+    customer_context: Optional[str] = None,
+    max_tool_iterations: int = MAX_TOOL_ITERATIONS,
+):
+    """Sends conversation history to OpenAI-compatible Chat Completions API with automatic tool execution."""
     tools = registry.get_llm_declarations()
-    messages = _build_openai_messages(history)
+    messages = _build_openai_messages(history, customer_context=customer_context)
 
     last_error: Exception | None = None
     response = None
@@ -190,7 +281,10 @@ async def ask_gpt(history: list[dict], max_tool_iterations: int = MAX_TOOL_ITERA
         assistant_msg = {
             "role": "assistant",
             "content": output_text or None,
-            "tool_calls": tool_calls,
+            "tool_calls": [
+                tc.model_dump() if hasattr(tc, "model_dump") else tc
+                for tc in tool_calls
+            ],
         }
         messages.append(assistant_msg)
 

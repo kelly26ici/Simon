@@ -8,7 +8,10 @@ from tavily import AsyncTavilyClient
 from src.configs.settings import TAVILY_API_KEY
 from src.tools.registry import registry
 
-client = AsyncTavilyClient(api_key=TAVILY_API_KEY)
+def _get_tavily_client() -> AsyncTavilyClient | None:
+    if not TAVILY_API_KEY:
+        return None
+    return AsyncTavilyClient(api_key=TAVILY_API_KEY)
 
 
 class TavilySearchSchema(BaseModel):
@@ -38,6 +41,10 @@ async def web_search(payload: TavilySearchSchema) -> dict:
     information you don't have, such as current market prices, news, or
     specific factual queries.
     """
+    client = _get_tavily_client()
+    if not client:
+        return {"error": "Web search is currently unavailable (API key not configured)."}
+
     params = payload.model_dump(exclude_none=True)
     # Strip empty lists / None values so Tavily doesn't choke
     params = {k: v for k, v in params.items() if v not in (None, [])}

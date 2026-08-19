@@ -4,7 +4,7 @@ from qdrant_client.http.exceptions import (
     UnexpectedResponse,
     ResponseHandlingException,
 )
-from qdrant_client.models import VectorParams, Distance
+from qdrant_client.models import VectorParams, Distance, PayloadSchemaType
 
 from src.configs.settings import QDRANT_URL, QDRANT_API_KEY
 from loguru import logger
@@ -47,8 +47,11 @@ async def check_if_collection_exists(collection_name: str) -> bool:
 
 
 async def make_collection(collection_name: str) -> bool:
+    """Ensure the Qdrant collection exists and has appropriate vector and payload schema."""
     try:
-        if not await check_if_collection_exists(collection_name):
+        exists = await check_if_collection_exists(collection_name)
+        if not exists:
+            logger.info("Creating Qdrant collection '{}'...", collection_name)
             await client.create_collection(
                 collection_name=collection_name,
                 vectors_config=VectorParams(
@@ -56,6 +59,26 @@ async def make_collection(collection_name: str) -> bool:
                     distance=Distance.COSINE,
                 ),
             )
+
+        # Create payload indices for fast filtered vector searches (idempotent in Qdrant)
+        for field, p_type in [
+            ("price", PayloadSchemaType.FLOAT),
+            ("bedrooms", PayloadSchemaType.INTEGER),
+            ("city", PayloadSchemaType.KEYWORD),
+            ("location", PayloadSchemaType.KEYWORD),
+            ("property_type", PayloadSchemaType.KEYWORD),
+            ("listing_type", PayloadSchemaType.KEYWORD),
+            ("status", PayloadSchemaType.KEYWORD),
+        ]:
+            try:
+                await client.create_payload_index(
+                    collection_name=collection_name,
+                    field_name=field,
+                    field_schema=p_type,
+                )
+            except Exception as idx_err:
+                logger.debug("Payload index creation for {} notice: {}", field, idx_err)
+
         return True
     except QdrantCollectionCheckError:
         raise
@@ -76,3 +99,4 @@ async def make_collection(collection_name: str) -> bool:
     except Exception as exc:
         logger.exception("Unexpected error while creating Qdrant collection")
         raise QdrantCollectionCreateError("Unexpected error creating Qdrant collection") from exc
+

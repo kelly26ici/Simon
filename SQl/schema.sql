@@ -198,3 +198,47 @@ CREATE TRIGGER trg_mpesa_transactions_modified_at
     BEFORE UPDATE ON mpesa_transactions
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
+
+-- ============================================================================
+-- SCHEDULED VIEWINGS TABLE
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS scheduled_viewings (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    property_id         UUID REFERENCES properties(id) ON DELETE CASCADE,
+    customer_phone      TEXT NOT NULL,
+    customer_name       TEXT,
+    viewing_date        TIMESTAMPTZ NOT NULL,
+    duration_minutes    INTEGER NOT NULL DEFAULT 30,
+    status              TEXT NOT NULL DEFAULT 'confirmed'
+                        CHECK (status IN ('confirmed', 'rescheduled', 'cancelled', 'completed')),
+    notes               TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_viewings_phone ON scheduled_viewings (customer_phone);
+CREATE INDEX IF NOT EXISTS idx_viewings_property ON scheduled_viewings (property_id);
+CREATE INDEX IF NOT EXISTS idx_viewings_date ON scheduled_viewings (viewing_date);
+
+DROP TRIGGER IF EXISTS trg_scheduled_viewings_modified_at ON scheduled_viewings;
+CREATE TRIGGER trg_scheduled_viewings_modified_at
+    BEFORE UPDATE ON scheduled_viewings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+-- ============================================================================
+-- PROPERTY INQUIRIES TABLE
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS property_inquiries (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_phone      TEXT NOT NULL,
+    property_id         UUID REFERENCES properties(id) ON DELETE SET NULL,
+    inquiry_type        TEXT NOT NULL DEFAULT 'general',
+    message             TEXT,
+    metadata            JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inquiries_phone ON property_inquiries (customer_phone);

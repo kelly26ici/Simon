@@ -16,15 +16,22 @@ load_dotenv()
 #======================================================
 
 
-GROQ_API_KEY=os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # Speech-to-Text model used by the audio transcriber (Groq).
 # Configurable via environment, defaults to whisper-large-v3.
-GROQ_STT_MODEL=os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
+GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
 
-GEMINI_API_KEY=os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-NVIDIA_API_KEY=os.getenv("NVIDIA_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "")
 
 #======================================================
 #                    WHATSAPP

@@ -217,6 +217,7 @@ async def _call_groq(audio_path: Path, ctx: str) -> object:
         BadRequestError,
         InternalServerError,
         NotFoundError,
+        PermissionDeniedError,
         RateLimitError,
         UnprocessableEntityError,
     )
@@ -233,14 +234,20 @@ async def _call_groq(audio_path: Path, ctx: str) -> object:
             try:
                 with audio_path.open("rb") as fh:
                     response = await client.audio.transcriptions.create(
-                        file=fh,
+                        file=(audio_path.name, fh.read()),
                         model=GROQ_STT_MODEL,
                         response_format="json",
                     )
                 return response
             except asyncio.CancelledError:
                 raise
-            except (AuthenticationError, BadRequestError, UnprocessableEntityError, NotFoundError) as exc:
+            except (
+                AuthenticationError,
+                PermissionDeniedError,
+                BadRequestError,
+                UnprocessableEntityError,
+                NotFoundError,
+            ) as exc:
                 logger.error(
                     "Permanent Groq error for {} — will not retry: [{}] {}",
                     ctx, type(exc).__qualname__, exc,
