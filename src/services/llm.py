@@ -72,17 +72,17 @@ def resolve_llm_config() -> Tuple[str, str, str, str]:
         return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
 
     # 3. Auto-detection priority:
-    # OpenRouter → Groq → NVIDIA
-    # OpenRouter is preferred: broader model support, full function-calling spec, no strict TPM
+    # NVIDIA → OpenRouter → Groq
+    # NVIDIA is preferred: aligns with project’s step‑function flash model and lower latency.
+    if NVIDIA_API_KEY:
+        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
     if OPENROUTER_API_KEY:
         return "openrouter", "https://openrouter.ai/api/v1", OPENROUTER_API_KEY, LLM_MODEL or OPENROUTER_MODEL
     if GROQ_API_KEY:
         return "groq", "https://api.groq.com/openai/v1", GROQ_API_KEY, LLM_MODEL or GROQ_MODEL
-    if NVIDIA_API_KEY:
-        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
 
-    # Default fallback
-    return "groq", "https://api.groq.com/openai/v1", "", LLM_MODEL or GROQ_MODEL
+    # Default fallback to NVIDIA model (even without key, will raise auth later)
+    return "nvidia", "https://integrate.api.nvidia.com/v1", "", LLM_MODEL or NVIDIA_MODEL
 
 
 _active_provider, _active_base_url, _active_key, _active_model = resolve_llm_config()
