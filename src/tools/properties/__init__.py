@@ -132,50 +132,63 @@ async def index_property(property_data: Union[str, Dict[str, Any]]) -> bool:
         return False
 
 
-async def index_all_properties() -> int:
-    """Fetch all available properties from Supabase, embed them in batches, and upsert into Qdrant."""
+async def index_all_properties(concurrency: int = 6) -> int:
+    """Fetch all available properties from Supabase, embed them concurrently in batches, and upsert into Qdrant."""
     await make_collection(PROPERTIES_COLLECTION)
 
-    properties = await db.search_properties(status="available")
+    properties = await db.get_all_properties(status="available")
     if not properties:
         logger.warning("No properties found in Supabase to index.")
         return 0
 
-    logger.info("Indexing {} properties into Qdrant...", len(properties))
+    logger.info("Indexing {} properties into Qdrant with concurrency={}...", len(properties), concurrency)
+    sem = asyncio.Semaphore(concurrency)
     indexed_count = 0
+    lock = asyncio.Lock()
 
-    for i in range(0, len(properties), BATCH_SIZE):
-        batch = properties[i : i + BATCH_SIZE]
-        texts = [_build_property_text(p) for p in batch]
+    async def _process_batch(batch_idx: int, batch: List[Dict[str, Any]]):
+        nonlocal indexed_count
+        async with sem:
+            texts = [_build_property_text(p) for p in batch]
+            try:
+                embeddings = await get_embeddings(texts)
+                if not embeddings or len(embeddings) != len(batch):
+                    logger.error("Embedding batch mismatch for batch index {}", batch_idx)
+                    return
+            except Exception:
+                logger.exception("Embedding batch {} failed, skipping.", batch_idx)
+                return
 
-        try:
-            embeddings = await get_embeddings(texts)
-            if not embeddings or len(embeddings) != len(batch):
-                logger.error("Embedding batch mismatch for batch index {}", i)
-                continue
-        except Exception:
-            logger.exception("Embedding batch {} failed, skipping.", i // BATCH_SIZE)
-            continue
-
-        points = []
-        for prop, vector in zip(batch, embeddings):
-            prop_id = str(prop["id"])
-            points.append(
-                PointStruct(
-                    id=prop_id,
-                    vector=vector,
-                    payload=_build_point_payload(prop),
+            points = []
+            for prop, vector in zip(batch, embeddings):
+                prop_id = str(prop["id"])
+                points.append(
+                    PointStruct(
+                        id=prop_id,
+                        vector=vector,
+                        payload=_build_point_payload(prop),
+                    )
                 )
-            )
 
-        if points:
-            await qdrant_client.upsert(
-                collection_name=PROPERTIES_COLLECTION,
-                points=points,
-                wait=True,
-            )
-            indexed_count += len(points)
-            logger.success("Indexed batch of {} properties.", len(points))
+            if points:
+                try:
+                    await qdrant_client.upsert(
+                        collection_name=PROPERTIES_COLLECTION,
+                        points=points,
+                        wait=False,
+                    )
+                    async with lock:
+                        indexed_count += len(points)
+                    logger.info("Indexed batch {}/{} ({} properties).", batch_idx + 1, (len(properties) + BATCH_SIZE - 1) // BATCH_SIZE, len(points))
+                except Exception as e:
+                    logger.error("Failed to upsert points for batch {}: {}", batch_idx, e)
+
+    batches = [
+        (i // BATCH_SIZE, properties[i : i + BATCH_SIZE])
+        for i in range(0, len(properties), BATCH_SIZE)
+    ]
+    tasks = [_process_batch(idx, b) for idx, b in batches]
+    await asyncio.gather(*tasks)
 
     logger.success("Completed Qdrant indexing: total {} properties.", indexed_count)
     return indexed_count

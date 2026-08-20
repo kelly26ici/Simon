@@ -148,7 +148,9 @@ async def check_tables(supabase) -> list[CheckResult]:
     for table, columns in EXPECTED.items():
         cols_csv = ",".join(columns)
         try:
-            await supabase.table(table).select(cols_csv).limit(1).execute()
+            await asyncio.to_thread(
+                lambda t=table, c=cols_csv: supabase.table(t).select(c).limit(1).execute()
+            )
         except Exception as e:
             name = type(e).__name__
             msg = str(e)
@@ -173,8 +175,10 @@ async def check_rowcounts(supabase) -> list[CheckResult]:
     results: list[CheckResult] = []
     for table in EXPECTED:
         try:
-            r = await supabase.table(table).select("id" if table == "properties" else "*",
-                                                     count="exact").limit(1).execute()
+            r = await asyncio.to_thread(
+                lambda t=table: supabase.table(t).select("id" if t == "properties" else "*",
+                                                         count="exact").limit(1).execute()
+            )
             count = r.count if hasattr(r, "count") and r.count is not None else "unknown"
         except Exception as e:
             results.append(CheckResult(f"rows:{table}", ok=False, detail=f"{type(e).__name__}: {e}"))

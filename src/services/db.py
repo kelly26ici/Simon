@@ -90,6 +90,35 @@ class DatabaseClient:
             logger.exception("Failed to upsert property {}: {}", property_data.get("title"), exc)
             return None
 
+    async def upsert_properties_batch(
+        self,
+        properties_data: List[Dict[str, Any]],
+        batch_size: int = 100,
+        on_conflict: Optional[str] = None,
+    ) -> int:
+        """Insert or update multiple properties in batches."""
+        if not self.client or not properties_data:
+            return 0
+
+        saved_total = 0
+        for i in range(0, len(properties_data), batch_size):
+            batch = properties_data[i : i + batch_size]
+            def _upsert_batch(b=batch):
+                kwargs = {}
+                if on_conflict:
+                    kwargs["on_conflict"] = on_conflict
+                res = self.client.table("properties").upsert(b, **kwargs).execute()
+                return len(res.data) if res.data else 0
+
+            try:
+                count = await self._run_sync(_upsert_batch)
+                saved_total += count
+                logger.info("Upserted batch {}/{} ({} properties)", i // batch_size + 1, (len(properties_data) + batch_size - 1) // batch_size, count)
+            except Exception as exc:
+                logger.error("Failed to upsert batch starting at {}: {}", i, exc)
+
+        return saved_total
+
     async def get_property_by_id(self, property_id: str) -> Optional[Dict[str, Any]]:
         """Fetch a single property by its UUID."""
         if not self.client:
@@ -129,6 +158,33 @@ class DatabaseClient:
             return await self._run_sync(_get_many)
         except Exception as exc:
             logger.exception("Error fetching properties by IDs: {}", exc)
+            return []
+
+    async def get_all_properties(self, limit: int = 10000, status: str = "available") -> List[Dict[str, Any]]:
+        """Fetch all properties across multiple PostgREST pages."""
+        if not self.client:
+            return []
+
+        def _fetch_all():
+            all_rows = []
+            page_size = 1000
+            for start in range(0, limit, page_size):
+                end = start + page_size - 1
+                query = self.client.table("properties").select("*")
+                if status:
+                    query = query.eq("status", status)
+                res = query.range(start, end).execute()
+                if not res.data:
+                    break
+                all_rows.extend(res.data)
+                if len(res.data) < page_size:
+                    break
+            return all_rows
+
+        try:
+            return await self._run_sync(_fetch_all)
+        except Exception as exc:
+            logger.exception("Error in get_all_properties: {}", exc)
             return []
 
     async def search_properties(self, **filters) -> List[Dict[str, Any]]:
