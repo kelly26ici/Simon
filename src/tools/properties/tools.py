@@ -129,6 +129,7 @@ async def search_properties(payload: SearchPropertiesSchema) -> Dict[str, Any]:
         }
 
     summaries = [_summarize_property(p) for p in results]
+    logger.success("Structured property search succeeded | found={} properties", len(summaries))
 
     return {
         "total": len(summaries),
@@ -196,6 +197,7 @@ async def semantic_search_properties(payload: SemanticSearchSchema) -> Dict[str,
         }
 
     summaries = [_summarize_property(p) for p in results]
+    logger.success("Semantic property search succeeded | query='{}' found={}", payload.query, len(summaries))
 
     return {
         "total": len(summaries),
@@ -226,10 +228,12 @@ async def get_property_details(payload: GetPropertyDetailsSchema) -> Dict[str, A
     logger.info("Fetching details for property ID: {}", payload.property_id)
     prop = await db.get_property_by_id(payload.property_id)
     if not prop:
+        logger.warning("Property with ID '{}' not found in database", payload.property_id)
         return {
             "error": f"Property with ID '{payload.property_id}' was not found. It may have been sold or removed.",
         }
 
+    logger.success("Retrieved property details successfully | property_id={} title='{}'", payload.property_id, prop.get("title"))
     return {
         "status": "success",
         "property": {
@@ -299,9 +303,11 @@ async def compare_properties(payload: ComparePropertiesSchema) -> Dict[str, Any]
             missing.append(pid)
 
     if not properties:
+        logger.warning("Property comparison failed: none of requested IDs found {}", payload.property_ids)
         return {"error": "None of the requested properties were found. They may have been removed or sold."}
 
     if len(properties) < 2:
+        logger.warning("Property comparison failed: insufficient properties ({})", len(properties))
         return {
             "error": "At least 2 valid properties are needed for comparison. "
                      f"Only {len(properties)} found. Missing: {missing}",
@@ -371,6 +377,7 @@ async def compare_properties(payload: ComparePropertiesSchema) -> Dict[str, Any]
     for r in comparison_rows:
         unique_amenities[r["title"]] = list(set(r["amenities"]) - common_amenities)
 
+    logger.success("Property comparison computed successfully | compared={}", len(comparison_rows))
     return {
         "compared": len(comparison_rows),
         "missing_ids": missing if missing else None,

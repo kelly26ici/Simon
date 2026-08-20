@@ -17,12 +17,11 @@ Usage in lifespan:
     await close_http_client()
 """
 
-from __future__ import annotations
-
+import asyncio
 import httpx
 from loguru import logger
 
-_http_client: httpx.AsyncClient | None = None
+_http_clients_by_loop: dict[asyncio.AbstractEventLoop | None, httpx.AsyncClient] = {}
 
 
 def create_http_client() -> httpx.AsyncClient:
@@ -37,28 +36,32 @@ def create_http_client() -> httpx.AsyncClient:
 
 def get_http_client() -> httpx.AsyncClient:
     """
-    Return the singleton HTTP client, creating it on first call.
-
-    Raises:
-        RuntimeError: if the client was closed and not re-initialized.
+    Return the event-loop scoped HTTP client, creating it if needed.
     """
-    global _http_client
-    if _http_client is None:
-        _http_client = create_http_client()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    client = _http_clients_by_loop.get(loop)
+    if client is None or client.is_closed:
+        client = create_http_client()
+        _http_clients_by_loop[loop] = client
         logger.info("HTTP client initialized")
-    return _http_client
+    return client
 
 
 async def close_http_client() -> None:
-    """Close the singleton HTTP client if it exists."""
-    global _http_client
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
+    """Close the HTTP client for the current event loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    client = _http_clients_by_loop.pop(loop, None)
+    if client is not None and not client.is_closed:
+        await client.aclose()
         logger.info("HTTP client closed")
 
 
-# Backwards-compatible alias for code that imports ``http_client`` directly.
-# New code should prefer ``get_http_client()`` so the client is always
-# resolved at call time (important if it gets closed and recreated).
 http_client: httpx.AsyncClient | None = None

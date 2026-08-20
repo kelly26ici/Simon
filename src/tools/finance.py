@@ -82,8 +82,15 @@ async def calculate_mortgage(payload: MortgageCalculatorSchema) -> Dict[str, Any
     valuation_fee = round(price * 0.0025, 2)  # approx 0.25%
     total_closing_costs = round(stamp_duty + legal_fees + valuation_fee, 2)
 
-    # Affordability benchmark: monthly payment is at most 33% of gross income
-    min_recommended_income = round(monthly_payment * 3, 2)
+    # Banks generally require monthly installment ≤ 33% of gross monthly income
+    min_recommended_income = round(monthly_payment / 0.33, 2)
+
+    logger.success(
+        "Mortgage calculated successfully | price=KES {:,.2f} monthly=KES {:,.2f} deposit=KES {:,.2f}",
+        price,
+        monthly_payment,
+        down_payment,
+    )
 
     return {
         "currency": "KES",
@@ -101,6 +108,10 @@ async def calculate_mortgage(payload: MortgageCalculatorSchema) -> Dict[str, Any
             "total_interest": total_interest,
             "total_repayment": total_repayment,
         },
+        "repayment_summary": (
+            f"{payload.loan_term_years} years at {payload.interest_rate_annual}% p.a.: "
+            f"KES {monthly_payment:,.2f} per month (Total repayment: KES {total_repayment:,.2f})"
+        ),
         "estimated_acquisition_costs": {
             "stamp_duty_4pct": stamp_duty,
             "legal_fees_approx": legal_fees,

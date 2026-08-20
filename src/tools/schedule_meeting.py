@@ -103,9 +103,17 @@ async def schedule_property_viewing(payload: ScheduleViewingSchema) -> Dict[str,
     prop_title = prop.get("title", "Selected Property") if prop else "Real Estate Consultation"
     location = prop.get("location", "Nairobi") if prop else "Nairobi"
 
+    booking_id = viewing.get("id")
+    logger.success(
+        "Viewing successfully scheduled | booking_id={} customer={} property={}",
+        booking_id,
+        payload.customer_phone,
+        payload.property_id,
+    )
+
     return {
         "status": "confirmed",
-        "booking_id": viewing.get("id"),
+        "booking_id": booking_id,
         "property_title": prop_title,
         "location": location,
         "viewing_time": payload.preferred_date_time,
@@ -124,6 +132,7 @@ async def schedule_property_viewing(payload: ScheduleViewingSchema) -> Dict[str,
 async def get_my_scheduled_viewings(payload: GetMyViewingsSchema) -> Dict[str, Any]:
     """Retrieve all upcoming and past scheduled property viewings for a customer."""
     viewings = await db.get_customer_viewings(payload.customer_phone)
+    logger.success("Retrieved {} scheduled viewing(s) for customer {}", len(viewings), payload.customer_phone)
     return {
         "total": len(viewings),
         "customer_phone": payload.customer_phone,
@@ -136,5 +145,7 @@ async def cancel_property_viewing(payload: CancelViewingSchema) -> Dict[str, Any
     """Cancel a scheduled viewing appointment."""
     success = await db.cancel_scheduled_viewing(payload.viewing_id, payload.customer_phone)
     if success:
+        logger.success("Viewing {} successfully cancelled for customer {}", payload.viewing_id, payload.customer_phone)
         return {"status": "success", "message": "Viewing has been cancelled."}
+    logger.warning("Failed to cancel viewing {}: not found or phone mismatch", payload.viewing_id)
     return {"status": "error", "message": "Could not cancel viewing. Please check the viewing ID."}

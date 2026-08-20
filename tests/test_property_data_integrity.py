@@ -67,6 +67,6 @@ def test_resolve_location_mapping():
         ("Tala market", "Tala", "Machakos"),
     ]
     for raw, expected_loc, expected_county in cases:
-        loc_name, city, county, lat, lng in resolve_location(raw)
+        loc_name, city, county, lat, lng = resolve_location(raw)
         assert expected_loc.lower() in loc_name.lower() or expected_loc.lower() in raw.lower()
         assert county == expected_county

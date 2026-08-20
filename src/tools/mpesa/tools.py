@@ -56,7 +56,7 @@ async def send_stk_push(payload: MpesaPaymentSchema) -> STKPushResult:
         },
     )
 
-    logger.info("STK push sent: {} for {}, KES {}", checkout_request_id, payload.PartyA, payload.Amount)
+    logger.success("STK push initiated successfully | checkout_request_id={} phone={} amount=KES {}", checkout_request_id, payload.PartyA, payload.Amount)
 
     return STKPushResult(
         checkout_request_id=checkout_request_id,
@@ -112,6 +112,7 @@ async def check_transaction_status(payload: CheckStatusSchema) -> TransactionSta
         state = TransactionState.FAILED
 
     await transaction_store.update(checkout_request_id, state=state.value, result_desc=body.get("ResultDesc"))
+    logger.success("M-Pesa status query resolved | checkout_request_id={} state={}", checkout_request_id, state.value)
 
     return TransactionStatus(
         checkout_request_id=checkout_request_id,

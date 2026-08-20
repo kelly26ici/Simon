@@ -267,16 +267,22 @@ async def ask_gpt(
 
         tool_calls = getattr(msg, "tool_calls", None) or []
 
+        if not tool_calls:
+            logger.success(
+                "LLM completion succeeded | iteration={} model={} finish_reason={} output_len={}",
+                iteration,
+                MODEL_NAME,
+                finish_reason,
+                len(output_text),
+            )
+            return response
+
         logger.info(
-            "LLM response iteration={} finish_reason={} output_text_len={} tool_calls_len={}",
+            "LLM requested {} tool call(s) on iteration {} | finish_reason={}",
+            len(tool_calls),
             iteration,
             finish_reason,
-            len(output_text),
-            len(tool_calls),
         )
-
-        if not tool_calls:
-            return response
 
         assistant_msg = {
             "role": "assistant",
@@ -304,6 +310,7 @@ async def ask_gpt(
 
             try:
                 tool_output_item = await registry.execute(call_id, name, args)
+                logger.success("Tool '{}' [call_id={}] completed during iteration {}", name, call_id, iteration)
             except Exception as exc:
                 logger.exception("Tool execution failed during LLM iteration {}", iteration)
                 raise

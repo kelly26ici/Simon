@@ -43,6 +43,7 @@ async def web_search(payload: TavilySearchSchema) -> dict:
     """
     client = _get_tavily_client()
     if not client:
+        logger.warning("Web search unavailable: TAVILY_API_KEY is not configured")
         return {"error": "Web search is currently unavailable (API key not configured)."}
 
     params = payload.model_dump(exclude_none=True)
@@ -51,6 +52,7 @@ async def web_search(payload: TavilySearchSchema) -> dict:
 
     try:
         response = await client.search(**params)
+        logger.success("Web search succeeded | query='{}' results={}", payload.query, len(response.get("results", [])))
     except Exception:
         logger.exception("Tavily search failed for query: {}", payload.query)
         return {"error": "Web search failed. Try again later."}

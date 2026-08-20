@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Optional
 from pydantic import BaseModel, Field
 
 # Suggested field names the model should prefer, kept here as the documented
@@ -15,16 +17,22 @@ SUGGESTED_CUSTOMER_FIELDS = {
 class SaveCustomerFactSchema(BaseModel):
     """Input for save_customer_fact tool."""
     phone_number: str = Field(..., description="The customer's WhatsApp ID/phone number")
-    field: str = Field(
-        ...,
+    field: Optional[str] = Field(
+        default=None,
         description=(
             "The profile field to update (snake_case). Suggested fields: "
             "preferred_name, budget_range, preferred_area — but any descriptive "
-            "snake_case field is accepted (e.g. preferred_city, preferred_bedrooms, "
-            "preferred_property_type, max_budget_kes)."
+            "snake_case field is accepted."
         ),
     )
-    value: str = Field(..., description="The value to save for this field")
+    value: Optional[str] = Field(default=None, description="The value to save for this field")
+    fact_key: Optional[str] = Field(default=None, description="Alternative key name for field")
+    fact_value: Optional[str] = Field(default=None, description="Alternative value name for value")
+
+    def get_field_and_value(self) -> tuple[str, str]:
+        f = self.field or self.fact_key or "general"
+        v = self.value or self.fact_value or ""
+        return f, v
 
 class FlagForSummarySchema(BaseModel):
     """Input for flag_for_summary tool."""

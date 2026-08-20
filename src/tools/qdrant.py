@@ -1,3 +1,4 @@
+import asyncio
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models as qdrant_models
 from qdrant_client.http.exceptions import (
@@ -9,10 +10,36 @@ from qdrant_client.models import VectorParams, Distance, PayloadSchemaType
 from src.configs.settings import QDRANT_URL, QDRANT_API_KEY
 from loguru import logger
 
-client = AsyncQdrantClient(
-    url=QDRANT_URL,
-    api_key=QDRANT_API_KEY,
-)
+PROPERTIES_COLLECTION = "properties"
+
+_qdrant_clients_by_loop: dict[asyncio.AbstractEventLoop | None, AsyncQdrantClient] = {}
+
+
+def get_qdrant_client() -> AsyncQdrantClient:
+    """Return an AsyncQdrantClient scoped to the current running event loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    client = _qdrant_clients_by_loop.get(loop)
+    if client is None:
+        client = AsyncQdrantClient(
+            url=QDRANT_URL,
+            api_key=QDRANT_API_KEY,
+        )
+        _qdrant_clients_by_loop[loop] = client
+    return client
+
+
+class _QdrantClientProxy:
+    """Proxy object ensuring calls delegate to the current event loop's client."""
+    def __getattr__(self, name: str):
+        actual = get_qdrant_client()
+        return getattr(actual, name)
+
+
+client = _QdrantClientProxy()
 
 
 class QdrantCollectionCheckError(Exception):

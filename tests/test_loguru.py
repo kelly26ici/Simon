@@ -1,14 +1,14 @@
 from loguru import logger
 import sys
 
-logger.remove(0)
-logger.add(sys.stderr, format="{level} | {message} | {time} | {extra}")
-childlogger = logger.bind(seller="test_seller")
+def test_loguru_levels_emitted():
+    """Verify loguru level emissions and binding."""
+    childlogger = logger.bind(seller="test_seller")
+    childlogger.info("Hello, this is a test log message from Loguru!")
+    childlogger.trace("TRACE MESSAGE")
+    childlogger.success("SUCCESS MESSAGE")
+    childlogger.debug("DEBUG MESSAGE")
+    childlogger.warning("WARNING MESSAGE")
+    childlogger.error("ERROR MESSAGE")
+    childlogger.critical("CRITICAL MESSAGE")
 
-logger.info("Hello, this is a test log message from Loguru!")
-logger.trace("TRACE MESSAGE")
-logger.success("SUCCESS MESSAGE")
-logger.debug("DEBUG MESSAGE")
-logger.warning("WARNIING MESSAGE")
-logger.error("ERROR MESSAAGE")
-logger.critical("CRITICAL MESSAGE")
