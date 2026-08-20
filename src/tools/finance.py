@@ -45,9 +45,10 @@ async def calculate_mortgage(payload: MortgageCalculatorSchema) -> Dict[str, Any
     Calculate estimated mortgage repayments, required down payment, statutory acquisition
     costs, and minimum monthly income criteria for buying real estate in Kenya.
 
-    Use this tool when:
-    - A customer asks about financing, monthly loan installments, or affordability.
-    - A customer asks: 'How much would I pay per month for this house?', 'What is the deposit needed?'.
+    Use this tool ONLY when:
+    - The customer explicitly asks for a mortgage breakdown, loan repayment calculation,
+      or specific financing estimate (e.g. "What are the monthly loan repayments?", "Calculate mortgage with 10% down").
+    - Do NOT call this tool proactively or offer unsolicited mortgage advice during casual property discovery.
 
     Returns:
     - Monthly mortgage payment (KES)

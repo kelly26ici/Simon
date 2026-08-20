@@ -112,9 +112,9 @@ async def cmd_search(query: str, limit: int = 5):
 
 
 async def cmd_chat(phone: str = "254706716616"):
-    """Interactive pair-programming & customer testing terminal chat with Samantha."""
+    """Interactive pair-programming & customer testing terminal chat with Simon."""
     print("=" * 65)
-    print(f" SAMANTHA REAL ESTATE — INTERACTIVE TERMINAL AGENT")
+    print(f" SIMON — REALTORS ROUND TABLES INTERACTIVE TERMINAL AGENT")
     print(f" Customer Phone Context: {phone}")
     print(f" Type your message below. Type 'exit', 'quit', or 'clear' anytime.")
     print("=" * 65 + "\n")
@@ -142,18 +142,18 @@ async def cmd_chat(phone: str = "254706716616"):
         history = await get_history(phone)
         context = await _build_customer_context_string(phone)
 
-        print("\n[Samantha is thinking & using tools...]\n")
+        print("\n[Simon is thinking & using tools...]\n")
         try:
             response = await ask_gpt(history, customer_context=context)
             output_text = getattr(response, "output_text", "") or "I am having trouble answering right now."
             await append_message(phone, "assistant", output_text)
-            print(f"Samantha:\n{output_text}")
+            print(f"Simon:\n{output_text}")
         except Exception as e:
-            print(f"Samantha encountered an error: {e}")
+            print(f"Simon encountered an error: {e}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Samantha Real Estate CLI")
+    parser = argparse.ArgumentParser(description="Realtors Round Tables CLI")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     subparsers.add_parser("status", help="Check system status and connections")
@@ -164,7 +164,7 @@ def main():
     search_parser.add_argument("query", type=str, help="Search query")
     search_parser.add_argument("--limit", type=int, default=5, help="Result limit")
 
-    chat_parser = subparsers.add_parser("chat", help="Start interactive chat with Samantha")
+    chat_parser = subparsers.add_parser("chat", help="Start interactive chat with Simon")
     chat_parser.add_argument("--phone", type=str, default="254706716616", help="Customer phone/ID")
 
     args = parser.parse_args()

@@ -91,3 +91,41 @@ async def test_customer_profile_learning_in_conversation():
     profile = pref_res["profile"]
     assert profile["preferred_name"] == "Wanjala Wafula"
     assert "Joska" in profile["preferred_area"]
+
+
+@pytest.mark.asyncio
+async def test_customer_requests_human_support():
+    """Customer asks to talk to Simon or customer service executive."""
+    from src.tools.support import ContactSupportSchema, get_support_contact
+    contact_res = await get_support_contact(ContactSupportSchema(inquiry_topic="Speak with executive"))
+    assert contact_res["status"] == "success"
+    assert contact_res["customer_service_executive"]["name"] == "Simon"
+    assert contact_res["customer_service_executive"]["phone"] == "0701454854"
+    assert "realtorsroundtables.co.ke" in contact_res["website"]
+
+
+@pytest.mark.asyncio
+async def test_handle_interactive_button_reply():
+    """Customer clicks a WhatsApp button to speak with Simon or view listings."""
+    from unittest.mock import patch, AsyncMock
+    from src.messages.interactions.interactive_handler import handle_interactive
+
+    with patch("src.messages.interactions.interactive_handler.handle_text", new_callable=AsyncMock) as mock_handle_text:
+        interactive_msg = {
+            "id": "wamid.HBg12345",
+            "type": "interactive",
+            "interactive": {
+                "type": "button_reply",
+                "button_reply": {
+                    "id": "btn_chat_simon",
+                    "title": "Chat with Simon",
+                },
+            },
+        }
+        await handle_interactive("254701454854", interactive_msg)
+        mock_handle_text.assert_awaited_once()
+        args = mock_handle_text.await_args[0]
+        assert args[0] == "254701454854"
+        assert args[1]["text"]["body"] == "Chat with Simon"
+
+

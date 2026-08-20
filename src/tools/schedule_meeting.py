@@ -98,8 +98,8 @@ async def schedule_property_viewing(payload: ScheduleViewingSchema) -> Dict[str,
             {"preferred_name": payload.customer_name},
         )
 
-    agent_name = prop.get("agent_name", "Samantha Real Estate Concierge") if prop else "Samantha Real Estate Concierge"
-    agent_phone = prop.get("agent_phone", "+254 700 000 000") if prop else "+254 700 000 000"
+    agent_name = prop.get("agent_name", "Simon | Realtors Round Tables") if prop else "Simon | Realtors Round Tables"
+    agent_phone = prop.get("agent_phone", "0701454854") if prop else "0701454854"
     prop_title = prop.get("title", "Selected Property") if prop else "Real Estate Consultation"
     location = prop.get("location", "Nairobi") if prop else "Nairobi"
 
@@ -123,8 +123,15 @@ async def schedule_property_viewing(payload: ScheduleViewingSchema) -> Dict[str,
         "assigned_agent": {
             "name": agent_name,
             "phone": agent_phone,
+            "whatsapp_link": f"https://wa.me/254{agent_phone.lstrip('+').lstrip('254').lstrip('0')}",
         },
-        "instructions": "Please arrive 10 minutes early. Our agent will meet you at the property entrance.",
+        "customer_service": {
+            "name": "Simon",
+            "phone": "0701454854",
+            "whatsapp_link": "https://wa.me/254701454854",
+            "website": "https://realtorsroundtables.co.ke",
+        },
+        "instructions": "Please arrive 10 minutes early. Our agent will meet you at the property entrance. For questions or adjustments, reach Simon on 0701454854.",
     }
 
 

@@ -151,3 +151,122 @@ async def send_typing_indicator(message_id: str) -> None:
     except _TRANSIENT_ERRORS as exc:
         log.warning(f"Network warning setting typing indicator: {exc}")
         raise
+
+
+async def send_whatsapp_interactive_cta(
+    to: str,
+    body_text: str,
+    button_text: str,
+    url: str,
+    header_text: str | None = None,
+    footer_text: str | None = None,
+) -> str | None:
+    """
+    Sends a WhatsApp interactive Call-To-Action (CTA) URL button.
+    Tapping the button immediately opens the URL (e.g. WhatsApp direct link or website).
+    """
+    url_endpoint = _get_messages_url()
+    interactive_payload: dict = {
+        "type": "cta_url",
+        "body": {"text": body_text},
+        "action": {
+            "name": "cta_url",
+            "parameters": {
+                "display_text": button_text[:20],
+                "url": url,
+            },
+        },
+    }
+
+    if header_text:
+        interactive_payload["header"] = {"type": "text", "text": header_text}
+    if footer_text:
+        interactive_payload["footer"] = {"text": footer_text[:60]}
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": interactive_payload,
+    }
+
+    log = logger.bind(recipient=to, action="send_whatsapp_interactive_cta")
+
+    try:
+        client = get_http_client()
+        resp = await client.post(url_endpoint, headers=_get_headers(), json=payload)
+        resp.raise_for_status()
+
+        data = resp.json()
+        meta_msg_id = data.get("messages", [{}])[0].get("id")
+        log.bind(wa_mid=meta_msg_id).info("WhatsApp CTA interactive message sent successfully")
+        return meta_msg_id
+    except Exception as exc:
+        log.error("Failed to send WhatsApp CTA interactive message: {}", exc)
+        # Fallback to standard text message if interactive fails
+        fallback_text = f"{body_text}\n\n👉 {button_text}: {url}"
+        await send_whatsapp_message(to, fallback_text)
+        return None
+
+
+async def send_whatsapp_quick_replies(
+    to: str,
+    body_text: str,
+    buttons: list[dict[str, str]],
+    header_text: str | None = None,
+    footer_text: str | None = None,
+) -> str | None:
+    """
+    Sends a WhatsApp interactive message with up to 3 quick reply buttons.
+    """
+    url_endpoint = _get_messages_url()
+    formatted_buttons = [
+        {
+            "type": "reply",
+            "reply": {
+                "id": btn.get("id", f"btn_{i}"),
+                "title": btn.get("title", "")[:20],
+            },
+        }
+        for i, btn in enumerate(buttons[:3])
+    ]
+
+    interactive_payload: dict = {
+        "type": "button",
+        "body": {"text": body_text},
+        "action": {
+            "buttons": formatted_buttons,
+        },
+    }
+
+    if header_text:
+        interactive_payload["header"] = {"type": "text", "text": header_text}
+    if footer_text:
+        interactive_payload["footer"] = {"text": footer_text[:60]}
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "interactive",
+        "interactive": interactive_payload,
+    }
+
+    log = logger.bind(recipient=to, action="send_whatsapp_quick_replies")
+
+    try:
+        client = get_http_client()
+        resp = await client.post(url_endpoint, headers=_get_headers(), json=payload)
+        resp.raise_for_status()
+
+        data = resp.json()
+        meta_msg_id = data.get("messages", [{}])[0].get("id")
+        log.bind(wa_mid=meta_msg_id).info("WhatsApp quick replies interactive message sent")
+        return meta_msg_id
+    except Exception as exc:
+        log.error("Failed to send WhatsApp quick replies: {}", exc)
+        fallback_text = f"{body_text}\n" + "\n".join(f"• {b.get('title')}" for b in buttons)
+        await send_whatsapp_message(to, fallback_text)
+        return None
+

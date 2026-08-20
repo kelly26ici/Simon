@@ -5,12 +5,14 @@ from loguru import logger
 from src.messages.parser import IncomingMessage
 from src.messages.chats.text_handler import handle_text
 from src.messages.audios.audio_handler import handle_audio
+from src.messages.interactions.interactive_handler import handle_interactive
 
 # Explicit registry — add an entry here as each new handler
 # (image, audio, interactive, ...) gets built out.
 MESSAGE_HANDLERS = {
     "text": handle_text,
     "audio": handle_audio,
+    "interactive": handle_interactive,
 }
 
 

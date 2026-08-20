@@ -5,3 +5,4 @@ import src.tools.memory.tools  # noqa: F401
 import src.tools.properties.tools  # noqa: F401
 import src.tools.schedule_meeting  # noqa: F401
 import src.tools.finance  # noqa: F401
+import src.tools.support  # noqa: F401

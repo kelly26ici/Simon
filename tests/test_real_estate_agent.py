@@ -25,6 +25,9 @@ from src.messages.chats.text_handler import _build_customer_context_string
 from src.services.llm import _build_openai_messages
 
 
+from src.tools.support import ContactSupportSchema, get_support_contact
+
+
 @pytest.mark.asyncio
 async def test_tool_registry_contains_real_estate_tools():
     names = registry.get_registered_tool_names()
@@ -38,6 +41,34 @@ async def test_tool_registry_contains_real_estate_tools():
     assert "calculate_mortgage" in names
     assert "save_customer_fact" in names
     assert "get_customer_preferences" in names
+    assert "get_support_contact" in names
+
+
+@pytest.mark.asyncio
+async def test_get_support_contact():
+    # Test general executive contact
+    res = await get_support_contact(ContactSupportSchema(inquiry_topic="general inquiry"))
+    assert res["status"] == "success"
+    assert res["company"] == "Realtors Round Tables"
+    assert res["website"] == "https://realtorsroundtables.co.ke"
+    assert res["customer_service_executive"]["name"] == "Simon"
+    assert res["customer_service_executive"]["phone"] == "0701454854"
+    assert "https://wa.me/254701454854" in res["customer_service_executive"]["whatsapp_link"]
+
+    # Test with property id
+    with patch("src.tools.support.db") as mock_db:
+        mock_db.get_property_by_id = AsyncMock(return_value={
+            "id": "prop-999",
+            "title": "Riverside Green Duplex",
+            "agent_name": "David Mwangi",
+            "agent_phone": "0701234567",
+            "agent_email": "david@realtorsroundtables.co.ke",
+        })
+        prop_res = await get_support_contact(ContactSupportSchema(property_id="prop-999"))
+        assert prop_res["status"] == "success"
+        assert "listing_agent" in prop_res
+        assert prop_res["listing_agent"]["agent_name"] == "David Mwangi"
+        assert "https://wa.me/254701234567" in prop_res["listing_agent"]["whatsapp_link"]
 
 
 @pytest.mark.asyncio

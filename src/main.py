@@ -9,7 +9,7 @@ from src.tools.mpesa import mpesa_router
 from src.uptime import lifespan
 
 app = FastAPI(
-    title="Samantha API",
+    title="Realtors Round Tables API",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -20,4 +20,4 @@ app.include_router(mpesa_router)
 
 @app.get("/uptime")
 async def get_uptime():
-    return {"uptime": "Samantha is up and running!"}
+    return {"uptime": "Simon (Realtors Round Tables) is up and running!"}

@@ -261,9 +261,20 @@ async def get_property_details(payload: GetPropertyDetailsSchema) -> Dict[str, A
             "images": prop.get("images", []),
             "video_url": prop.get("video_url"),
             "virtual_tour_url": prop.get("virtual_tour_url"),
-            "agent_name": prop.get("agent_name"),
-            "agent_phone": prop.get("agent_phone"),
-            "agent_email": prop.get("agent_email"),
+            "agent_name": prop.get("agent_name", "Realtors Round Tables Agent"),
+            "agent_phone": prop.get("agent_phone", "0701454854"),
+            "agent_email": prop.get("agent_email", "info@realtorsroundtables.co.ke"),
+            "agent_whatsapp": (
+                f"https://wa.me/254{prop.get('agent_phone', '0701454854').lstrip('+').lstrip('254').lstrip('0')}"
+                if prop.get("agent_phone")
+                else "https://wa.me/254701454854"
+            ),
+            "customer_service_executive": {
+                "name": "Simon",
+                "phone": "0701454854",
+                "whatsapp": "https://wa.me/254701454854",
+                "website": "https://realtorsroundtables.co.ke",
+            },
         },
     }
 
