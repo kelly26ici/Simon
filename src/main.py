@@ -5,6 +5,7 @@ from fastapi import FastAPI
 import src.tools  # noqa: F401
 
 from src.routes.webhook import router as webhook_router
+from src.routes.telegram import router as telegram_router
 from src.tools.mpesa import mpesa_router
 from src.uptime import lifespan
 
@@ -15,6 +16,7 @@ app = FastAPI(
 )
 
 app.include_router(webhook_router)
+app.include_router(telegram_router)
 app.include_router(mpesa_router)
 
 

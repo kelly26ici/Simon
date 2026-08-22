@@ -122,3 +122,10 @@ TAVILY_API_KEY=os.getenv("TAVILY_API_KEY")
 
 
 RENDER_BASE_URL=os.getenv("RENDER_BASE_URL", "https://samantha-nrev.onrender.com")
+
+#======================================================
+#                    TELEGRAM
+#======================================================
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+SIMON_CHAT_ID = os.getenv("SIMON_CHAT_ID", "")
+

@@ -34,9 +34,34 @@ class SaveCustomerFactSchema(BaseModel):
         v = self.value or self.fact_value or ""
         return f, v
 
-class FlagForSummarySchema(BaseModel):
-    """Input for flag_for_summary tool."""
-    phone_number: str = Field(..., description="The customer's WhatsApp ID/phone number to flag for summarization")
+
+class UpdateConversationSummarySchema(BaseModel):
+    """Input for update_conversation_summary tool."""
+    phone_number: str = Field(..., description="The customer's WhatsApp ID/phone number")
+    summary: str = Field(
+        ...,
+        description=(
+            "A concise, updated summary of the conversation so far. Include: "
+            "customer name, key requirements (budget, location, property type, bedrooms), "
+            "properties they showed interest in (IDs + titles), viewing status, "
+            "negotiation stage, and any concerns or special requests. "
+            "Overwrite the previous summary with the complete latest version — do NOT append."
+        ),
+    )
+
+
+class NotifyOwnerSchema(BaseModel):
+    """Input for notify_owner tool."""
+    phone_number: str = Field(..., description="The customer's WhatsApp ID/phone number")
+    message: str = Field(
+        ...,
+        description=(
+            "The detailed message to send to the owner (Simon) via Telegram. "
+            "Include: customer name and phone, what they are looking for, "
+            "properties discussed, booking status, any pending actions, and urgency level."
+        ),
+    )
+
 
 class CheckPaymentHistorySchema(BaseModel):
     """Input for check_payment_history tool."""

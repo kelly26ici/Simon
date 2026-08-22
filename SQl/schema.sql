@@ -242,3 +242,41 @@ CREATE TABLE IF NOT EXISTS property_inquiries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_inquiries_phone ON property_inquiries (customer_phone);
+
+-- ============================================================================
+-- CONVERSATION SUMMARIES
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    whatsapp_id     TEXT PRIMARY KEY,
+    summary         TEXT NOT NULL,
+    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_summaries_phone ON conversation_summaries (whatsapp_id);
+
+DROP TRIGGER IF EXISTS trg_conversation_summaries_modified_at ON conversation_summaries;
+CREATE TRIGGER trg_conversation_summaries_modified_at
+    BEFORE UPDATE ON conversation_summaries
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+-- ============================================================================
+-- BOT SETTINGS / OWNER CONFIG
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS bot_settings (
+    key             TEXT PRIMARY KEY,
+    value           TEXT NOT NULL,
+    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS trg_bot_settings_modified_at ON bot_settings;
+CREATE TRIGGER trg_bot_settings_modified_at
+    BEFORE UPDATE ON bot_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();

@@ -65,6 +65,154 @@ class DatabaseClient:
             return None
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # Conversation Summaries
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def upsert_conversation_summary(
+        self,
+        whatsapp_id: str,
+        summary: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Persists the live conversation summary for a customer to the database,
+        with fallback to customer_profiles metadata and memory cache."""
+        # 1. Update customer profile metadata as redundant backup
+        try:
+            await self.upsert_customer_profile(
+                whatsapp_id,
+                {"conversation_summary": summary},
+            )
+        except Exception as exc:
+            logger.debug("Redundant profile summary sync failed: {}", exc)
+
+        # 2. Persist in conversation_summaries table if Supabase client available
+        if self.client:
+            payload = {
+                "whatsapp_id": whatsapp_id,
+                "summary": summary,
+                "metadata": metadata or {},
+            }
+            def _upsert():
+                try:
+                    self.client.table("conversation_summaries").upsert(payload).execute()
+                    return True
+                except Exception as exc:
+                    logger.warning("conversation_summaries table upsert failed: {}", exc)
+                    return False
+
+            try:
+                ok = await self._run_sync(_upsert)
+                if ok:
+                    return True
+            except Exception as exc:
+                logger.warning("Could not execute conversation_summaries upsert: {}", exc)
+
+        # If table is missing or DB temporarily unreachable, profile/memory update succeeded
+        return True
+
+    async def get_conversation_summary(self, whatsapp_id: str) -> Optional[str]:
+        """Retrieve latest conversation summary for a customer."""
+        # 1. Try dedicated conversation_summaries table
+        if self.client:
+            def _get():
+                try:
+                    res = self.client.table("conversation_summaries").select("summary").eq("whatsapp_id", whatsapp_id).execute()
+                    if res.data:
+                        return res.data[0].get("summary")
+                except Exception as exc:
+                    logger.debug("conversation_summaries table select failed: {}", exc)
+                return None
+
+            try:
+                summary = await self._run_sync(_get)
+                if summary:
+                    return summary
+            except Exception as exc:
+                logger.debug("Error fetching from conversation_summaries: {}", exc)
+
+        # 2. Fallback to customer_profiles table metadata
+        profile = await self.get_customer_profile(whatsapp_id)
+        if profile:
+            metadata = profile.get("metadata") or {}
+            if "conversation_summary" in metadata:
+                return metadata["conversation_summary"]
+
+        return None
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Bot / Owner System Settings
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def save_bot_setting(
+        self,
+        key: str,
+        value: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Saves a system or bot configuration key/value (e.g. SIMON_CHAT_ID)."""
+        if not self.client:
+            return False
+
+        payload = {
+            "key": key,
+            "value": str(value),
+            "metadata": metadata or {},
+        }
+
+        def _upsert():
+            try:
+                self.client.table("bot_settings").upsert(payload).execute()
+                return True
+            except Exception as exc:
+                logger.warning("bot_settings upsert failed: {}", exc)
+                return False
+
+        try:
+            return await self._run_sync(_upsert)
+        except Exception as exc:
+            logger.warning("Failed to save bot setting {}: {}", key, exc)
+            return False
+
+    async def get_bot_setting(self, key: str) -> Optional[str]:
+        """Fetches a system or bot configuration value by key."""
+        if not self.client:
+            return None
+
+        def _get():
+            try:
+                res = self.client.table("bot_settings").select("value").eq("key", key).execute()
+                if res.data:
+                    return res.data[0].get("value")
+            except Exception as exc:
+                logger.debug("bot_settings select failed for {}: {}", key, exc)
+            return None
+
+        try:
+            return await self._run_sync(_get)
+        except Exception as exc:
+            logger.debug("Failed to get bot setting {}: {}", key, exc)
+            return None
+
+    async def save_owner_chat_id(
+        self,
+        chat_id: str,
+        username: Optional[str] = None,
+        first_name: Optional[str] = None,
+    ) -> bool:
+        """Saves the primary owner / Simon's Telegram Chat ID."""
+        meta = {}
+        if username:
+            meta["username"] = username
+        if first_name:
+            meta["first_name"] = first_name
+        return await self.save_bot_setting("SIMON_CHAT_ID", str(chat_id), metadata=meta)
+
+    async def get_owner_chat_id(self) -> Optional[str]:
+        """Retrieves Simon's Telegram Chat ID from database settings."""
+        return await self.get_bot_setting("SIMON_CHAT_ID")
+
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # Properties
     # ═══════════════════════════════════════════════════════════════════════════
 

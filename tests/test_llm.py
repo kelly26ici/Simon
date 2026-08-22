@@ -1,11 +1,12 @@
-"""Unit tests for the LLM service layer (ask_gpt).
+"""Unit tests for the LLM service layer (ask_llm / ask_gpt alias).
 
 Covers
 ------
 - Basic happy-path response with no tool calls.
 - Tool-call loop: model returns a tool call, tool executes, model returns
   the final answer on the next iteration.
-- Tool execution failure propagates without swallowing.
+- Tool execution failure is serialised as a structured error payload back
+  to the LLM, NOT propagated to the caller (by design).
 - API error classification: 5xx -> LLMServiceUnavailableError,
   429 -> LLMRateLimitError, 422 -> LLMError.
 """
@@ -298,25 +299,70 @@ async def test_ask_gpt_422_raises_generic_llm_error():
 
 
 @pytest.mark.asyncio
-async def test_tool_execution_failure_propagates():
-    """If registry.execute raises, ask_gpt must not swallow it."""
+async def test_tool_execution_failure_is_returned_to_llm_not_raised():
+    """Tool runtime errors must be serialised as a structured error payload
+    into the next LLM turn — NOT propagated to the caller.
+
+    Previously the test expected a RuntimeError to bubble out of ask_llm, but
+    the intended design (as stated in the docstring of ask_llm) is to pass the
+    failure back to the model so it can retry, use a fallback tool, or explain
+    to the customer why it cannot complete the request.
+    """
     tool_call = _make_tool_call(name="some_tool")
     response_with_tool = _make_response(output_text="", tool_calls=[tool_call])
+    final_response = _make_response(output_text="Sorry, I ran into a problem with that tool.")
+
+    call_count = 0
+
+    async def fake_create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        # First call triggers the tool.
+        # Second call receives the error payload and produces the final answer.
+        return response_with_tool if call_count == 1 else final_response
+
+    captured_messages = []
+
+    async def fake_create_capturing(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        captured_messages.extend(kwargs.get("messages", []))
+        return response_with_tool if call_count == 1 else final_response
 
     with patch(
         "src.services.llm.client.chat.completions.create",
-        AsyncMock(return_value=response_with_tool),
+        side_effect=fake_create_capturing,
     ), patch(
         "src.tools.registry.registry.execute",
         side_effect=RuntimeError("tool boom"),
     ):
-        with pytest.raises(RuntimeError, match="tool boom"):
-            await ask_gpt(
-                [
-                    {
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": "Hi"}],
-                    }
-                ],
-                max_tool_iterations=3,
-            )
+        result = await ask_gpt(
+            [
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "Hi"}],
+                }
+            ],
+            max_tool_iterations=3,
+        )
+
+    # The loop must NOT raise — it returns the LLM's follow-up answer.
+    assert result is not None
+    # The LLM was called at least twice (once to get the tool call, once with the error payload).
+    assert call_count >= 2
+    # The captured messages for the second LLM call must contain a "tool" role message
+    # with an error payload so the model can reason about what went wrong.
+    tool_role_messages = [
+        m for m in captured_messages if isinstance(m, dict) and m.get("role") == "tool"
+    ]
+    assert len(tool_role_messages) >= 1, (
+        "A 'tool' role message containing the error payload must be sent back to the LLM"
+    )
+    import json as _json
+    tool_content = tool_role_messages[0].get("content", "")
+    parsed = _json.loads(tool_content) if isinstance(tool_content, str) else tool_content
+    assert "error" in parsed, "Tool error payload must include an 'error' key"
+    assert "tool boom" in parsed.get("detail", ""), (
+        "Tool error payload must include the original exception message in 'detail'"
+    )
+
