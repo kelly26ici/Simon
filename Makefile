@@ -48,3 +48,6 @@ loguru:
 
 template:
 	uv run template.sh
+
+keep-alive:
+	python3 scripts/keep_alive.py

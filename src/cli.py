@@ -21,7 +21,7 @@ from src.tools.properties import index_all_properties, semantic_search
 from src.tools.embeddings import get_embeddings
 from src.messages.chats.conversation import get_history, append_message
 from src.messages.chats.text_handler import _build_customer_context_string
-from src.services.llm import ask_gpt, MODEL_NAME, _active_provider
+from src.services.llm import ask_llm, MODEL_NAME, _active_provider
 from src.data.seed_properties import PROPERTIES_SEED_DATA
 
 
@@ -144,7 +144,7 @@ async def cmd_chat(phone: str = "254706716616"):
 
         print("\n[Simon is thinking & using tools...]\n")
         try:
-            response = await ask_gpt(history, customer_context=context)
+            response = await ask_llm(history, customer_context=context)
             output_text = getattr(response, "output_text", "") or "I am having trouble answering right now."
             await append_message(phone, "assistant", output_text)
             print(f"Simon:\n{output_text}")

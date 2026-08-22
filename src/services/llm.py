@@ -207,16 +207,26 @@ def _format_tools(tools: list[dict]) -> list[dict]:
     return formatted
 
 
-async def ask_gpt(
+async def ask_llm(
     history: list[dict],
     customer_context: Optional[str] = None,
     max_tool_iterations: int = MAX_TOOL_ITERATIONS,
 ):
-    """Sends conversation history to OpenAI-compatible Chat Completions API with automatic tool execution."""
+    """Sends conversation history to OpenAI-compatible Chat Completions API with automatic tool execution.
+
+    LLM-level errors (rate limit, auth, connection) are raised as typed exceptions
+    (LLMRateLimitError, LLMAuthenticationError, LLMServiceUnavailableError, LLMError)
+    so callers can produce specific customer-facing messages.
+
+    Tool execution errors are NOT raised — they are serialised as structured error
+    payloads in the tool-result message so the LLM can decide how to respond
+    (retry with different args, fall back to another tool, or explain to the customer).
+    """
     tools = registry.get_llm_declarations()
     messages = _build_openai_messages(history, customer_context=customer_context)
 
-    last_error: Exception | None = None
+    import json as _json
+
     response = None
 
     for iteration in range(max_tool_iterations):
@@ -232,26 +242,21 @@ async def ask_gpt(
         try:
             response = await client.chat.completions.create(**kwargs)
         except RateLimitError as exc:
-            last_error = _classify_openai_exception(exc)
             logger.warning("LLM rate limited on iteration {}: {}", iteration, exc)
-            raise last_error
+            raise _classify_openai_exception(exc)
         except APIStatusError as exc:
-            last_error = _classify_openai_exception(exc)
             status = getattr(exc, "status_code", None)
             logger.error("LLM API status error {} on iteration {}: {}", status, iteration, exc)
-            raise last_error
+            raise _classify_openai_exception(exc)
         except APIConnectionError as exc:
-            last_error = _classify_openai_exception(exc)
             logger.error("LLM connection error on iteration {}: {}", iteration, exc)
-            raise last_error
+            raise _classify_openai_exception(exc)
         except APIError as exc:
-            last_error = _classify_openai_exception(exc)
             logger.error("LLM API error on iteration {}: {}", iteration, exc)
-            raise last_error
+            raise _classify_openai_exception(exc)
         except Exception as exc:
-            last_error = _classify_openai_exception(exc)
             logger.exception("Unexpected error calling LLM on iteration {}", iteration)
-            raise last_error
+            raise _classify_openai_exception(exc)
 
         choices = getattr(response, "choices", None) or []
         if not choices:
@@ -312,8 +317,24 @@ async def ask_gpt(
                 tool_output_item = await registry.execute(call_id, name, args)
                 logger.success("Tool '{}' [call_id={}] completed during iteration {}", name, call_id, iteration)
             except Exception as exc:
-                logger.exception("Tool execution failed during LLM iteration {}", iteration)
-                raise
+                # Do NOT propagate tool errors — serialise them as a structured
+                # error tool-result so the LLM can reason about the failure and
+                # decide whether to retry, use a fallback tool, or explain to the
+                # customer.  Crashing the loop here would give the customer a
+                # generic error message with no actionable context.
+                error_detail = str(exc).strip() or repr(exc)
+                logger.error(
+                    "Tool '{}' [call_id={}] raised during iteration {}: {}",
+                    name, call_id, iteration, error_detail,
+                )
+                tool_output_item = {
+                    "output": _json.dumps({
+                        "error": f"Tool '{name}' raised an unexpected exception.",
+                        "error_type": type(exc).__name__,
+                        "detail": error_detail,
+                        "retry_useful": True,
+                    })
+                }
 
             if isinstance(tool_output_item, dict) and "output" in tool_output_item:
                 tool_result_content = tool_output_item["output"]
@@ -326,8 +347,10 @@ async def ask_gpt(
                 "content": tool_result_content,
             })
 
-    assert last_error is None, (
-        "last_error was set but no exception was raised — "
-        "a raise was removed from an except branch"
-    )
     return response
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatibility alias — remove once all call-sites are updated.
+# ---------------------------------------------------------------------------
+ask_gpt = ask_llm

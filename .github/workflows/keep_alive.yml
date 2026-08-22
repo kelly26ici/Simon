@@ -1,0 +1,29 @@
+name: Database Keep-Alive Ping
+
+on:
+  schedule:
+    # Runs at 00:00 UTC every 3 days to keep Supabase and Qdrant free tiers active
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # Allows manual triggering from GitHub Actions tab
+
+jobs:
+  keep-alive:
+    name: Ping Supabase & Qdrant Databases
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run Keep-Alive Ping
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+        run: python scripts/keep_alive.py

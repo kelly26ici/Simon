@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
 
-from src.clients.httpx_client import get_http_client, close_http_client
+from scripts.keep_alive import ping_qdrant, ping_supabase
+from src.clients.httpx_client import close_http_client, get_http_client
 from src.configs.settings import RENDER_BASE_URL
 
 
@@ -26,17 +27,49 @@ async def _keep_alive():
         await asyncio.sleep(300)
 
 
+async def _keep_databases_alive():
+    """Periodically ping Supabase and Qdrant databases every 6 hours to prevent free-tier pausing."""
+    await asyncio.sleep(15)
+
+    while True:
+        try:
+            sb_ok = await asyncio.to_thread(ping_supabase)
+            qd_ok = await asyncio.to_thread(ping_qdrant)
+
+            if sb_ok:
+                logger.info("Supabase database keep-alive ping successful.")
+            else:
+                logger.warning("Supabase database keep-alive ping returned failure.")
+
+            if qd_ok:
+                logger.info("Qdrant cluster keep-alive ping successful.")
+            else:
+                logger.warning("Qdrant cluster keep-alive ping returned failure.")
+        except asyncio.CancelledError:
+            logger.info("Database keep-alive task stopped.")
+            break
+        except Exception as exc:
+            logger.exception("Error during database keep-alive task: {}", exc)
+
+        # Ping every 6 hours (21,600 seconds)
+        await asyncio.sleep(21600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure the HTTP client is initialized before serving requests
     get_http_client()
     keep_alive_task = asyncio.create_task(_keep_alive())
+    db_keep_alive_task = asyncio.create_task(_keep_databases_alive())
     try:
         yield
     finally:
         keep_alive_task.cancel()
+        db_keep_alive_task.cancel()
         try:
-            await keep_alive_task
-        except asyncio.CancelledError:
+            await asyncio.gather(
+                keep_alive_task, db_keep_alive_task, return_exceptions=True
+            )
+        except Exception:
             pass
         await close_http_client()

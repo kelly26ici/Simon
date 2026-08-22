@@ -207,8 +207,6 @@ async def delete_property_index(property_id: str) -> bool:
     except Exception:
         logger.exception("Failed to delete property {} from Qdrant", property_id)
         return False
-
-
 async def semantic_search(
     query: str,
     limit: int = 5,
@@ -226,11 +224,17 @@ async def semantic_search(
     try:
         embeddings = await get_embeddings([query])
         if not embeddings:
-            logger.warning("Could not compute embeddings for query: '{}'", query)
-            return []
-    except Exception:
-        logger.exception("Failed to embed search query")
-        return []
+            raise RuntimeError(
+                f"Embeddings service returned an empty result for query: '{query}'. "
+                "The embeddings API may be unavailable or the query was rejected."
+            )
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to embed search query: '{}'", query)
+        raise RuntimeError(
+            f"Failed to generate embeddings for the search query: {exc}"
+        ) from exc
 
     query_vector = embeddings[0]
 
@@ -254,14 +258,20 @@ async def semantic_search(
 
     qdrant_filter = Filter(must=must_filters) if must_filters else None
 
-    results = await qdrant_client.query_points(
-        collection_name=PROPERTIES_COLLECTION,
-        query=query_vector,
-        limit=limit,
-        query_filter=qdrant_filter,
-        with_payload=True,
-        with_vectors=False,
-    )
+    try:
+        results = await qdrant_client.query_points(
+            collection_name=PROPERTIES_COLLECTION,
+            query=query_vector,
+            limit=limit,
+            query_filter=qdrant_filter,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        logger.exception("Qdrant query_points failed for query: '{}'", query)
+        raise RuntimeError(
+            f"Vector store (Qdrant) search failed: {exc}"
+        ) from exc
 
     return [
         {
