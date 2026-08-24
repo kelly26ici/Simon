@@ -32,9 +32,10 @@ def _get_headers() -> dict[str, str]:
     }
 
 
-def _get_messages_url() -> str:
+def _get_messages_url(phone_number_id: str | None = None) -> str:
     """Constructs the base WhatsApp messages endpoint."""
-    return f"{META_GRAPH_BASE_URL}/{META_GRAPH_API_VERSION}/{META_PHONE_NUMBER_ID}/messages"
+    pid = (phone_number_id or "").strip() or META_PHONE_NUMBER_ID
+    return f"{META_GRAPH_BASE_URL}/{META_GRAPH_API_VERSION}/{pid}/messages"
 
 
 def _extract_error_details(exc: httpx.HTTPStatusError) -> dict:
@@ -45,12 +46,12 @@ def _extract_error_details(exc: httpx.HTTPStatusError) -> dict:
         return {"raw": exc.response.text}
 
 
-async def _send_single_message(to: str, text: str) -> str | None:
+async def _send_single_message(to: str, text: str, phone_number_id: str | None = None) -> str | None:
     """Sends a single WhatsApp text message (no formatting, no splitting).
 
     Returns the Meta message ID on success, or None on failure.
     """
-    url = _get_messages_url()
+    url = _get_messages_url(phone_number_id)
     payload = {
         "messaging_product": "whatsapp",
         "to": to,
@@ -89,7 +90,7 @@ async def _send_single_message(to: str, text: str) -> str | None:
         raise
 
 
-async def send_whatsapp_message(to: str, text: str) -> None:
+async def send_whatsapp_message(to: str, text: str, phone_number_id: str | None = None) -> None:
     """Sends a text message to a specific WhatsApp recipient.
 
     The text is first passed through the WhatsApp formatting layer, which:
@@ -104,7 +105,7 @@ async def send_whatsapp_message(to: str, text: str) -> None:
     messages = format_for_whatsapp(text)
 
     for msg in messages:
-        await _send_single_message(to, msg)
+        await _send_single_message(to, msg, phone_number_id=phone_number_id)
 
 
 @retry(
@@ -113,9 +114,9 @@ async def send_whatsapp_message(to: str, text: str) -> None:
     retry=retry_if_exception_type(_TRANSIENT_ERRORS),
     before_sleep=before_sleep_log(logger, "WARNING"),
 )
-async def send_typing_indicator(message_id: str) -> None:
+async def send_typing_indicator(message_id: str, phone_number_id: str | None = None) -> None:
     """Marks the inbound message as read and displays the typing bubble."""
-    url = _get_messages_url()
+    url = _get_messages_url(phone_number_id)
     payload = {
         "messaging_product": "whatsapp",
         "status": "read",
@@ -160,12 +161,13 @@ async def send_whatsapp_interactive_cta(
     url: str,
     header_text: str | None = None,
     footer_text: str | None = None,
+    phone_number_id: str | None = None,
 ) -> str | None:
     """
     Sends a WhatsApp interactive Call-To-Action (CTA) URL button.
     Tapping the button immediately opens the URL (e.g. WhatsApp direct link or website).
     """
-    url_endpoint = _get_messages_url()
+    url_endpoint = _get_messages_url(phone_number_id)
     interactive_payload: dict = {
         "type": "cta_url",
         "body": {"text": body_text},
@@ -206,7 +208,7 @@ async def send_whatsapp_interactive_cta(
         log.error("Failed to send WhatsApp CTA interactive message: {}", exc)
         # Fallback to standard text message if interactive fails
         fallback_text = f"{body_text}\n\n👉 {button_text}: {url}"
-        await send_whatsapp_message(to, fallback_text)
+        await send_whatsapp_message(to, fallback_text, phone_number_id=phone_number_id)
         return None
 
 
@@ -216,11 +218,12 @@ async def send_whatsapp_quick_replies(
     buttons: list[dict[str, str]],
     header_text: str | None = None,
     footer_text: str | None = None,
+    phone_number_id: str | None = None,
 ) -> str | None:
     """
     Sends a WhatsApp interactive message with up to 3 quick reply buttons.
     """
-    url_endpoint = _get_messages_url()
+    url_endpoint = _get_messages_url(phone_number_id)
     formatted_buttons = [
         {
             "type": "reply",
@@ -267,6 +270,6 @@ async def send_whatsapp_quick_replies(
     except Exception as exc:
         log.error("Failed to send WhatsApp quick replies: {}", exc)
         fallback_text = f"{body_text}\n" + "\n".join(f"• {b.get('title')}" for b in buttons)
-        await send_whatsapp_message(to, fallback_text)
+        await send_whatsapp_message(to, fallback_text, phone_number_id=phone_number_id)
         return None
 

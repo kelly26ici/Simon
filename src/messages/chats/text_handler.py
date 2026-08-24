@@ -103,7 +103,7 @@ def _customer_message_for_llm_error(exc: Exception) -> str:
     )
 
 
-async def handle_text(sender: str, msg: dict) -> None:
+async def handle_text(sender: str, msg: dict, phone_number_id: str | None = None) -> None:
     """Handles one incoming text message using THIS customer's own history and profile."""
     user_text = msg["text"]["body"]
     message_id = msg["id"]  # WAMID of the inbound message — needed for typing indicator
@@ -113,7 +113,7 @@ async def handle_text(sender: str, msg: dict) -> None:
     customer_context = await _build_customer_context_string(sender)
 
     try:
-        await send_typing_indicator(message_id)
+        await send_typing_indicator(message_id, phone_number_id=phone_number_id)
     except Exception as exc:
         logger.warning(
             "Typing indicator failed for {}: {}",
@@ -129,7 +129,7 @@ async def handle_text(sender: str, msg: dict) -> None:
         logger.error("LLM error for sender {}: {}: {}", sender, type(exc).__name__, exc)
         fallback = _customer_message_for_llm_error(exc)
         await append_message(sender, "assistant", fallback)
-        await send_whatsapp_message(sender, fallback)
+        await send_whatsapp_message(sender, fallback, phone_number_id=phone_number_id)
         return
     except Exception as exc:
         # Truly unexpected (e.g. network misconfiguration, bug) — generic safe message.
@@ -139,7 +139,7 @@ async def handle_text(sender: str, msg: dict) -> None:
             "or call us at 0701 454 854. 😊"
         )
         await append_message(sender, "assistant", fallback)
-        await send_whatsapp_message(sender, fallback)
+        await send_whatsapp_message(sender, fallback, phone_number_id=phone_number_id)
         return
 
     reply_text = getattr(reply, "output_text", None) or ""
@@ -152,13 +152,13 @@ async def handle_text(sender: str, msg: dict) -> None:
             "I didn't quite get a response there. Could you rephrase that, or try again in a moment? 😊"
         )
         await append_message(sender, "assistant", fallback)
-        await send_whatsapp_message(sender, fallback)
+        await send_whatsapp_message(sender, fallback, phone_number_id=phone_number_id)
         return
 
     await append_message(sender, "assistant", reply_text)
 
     try:
-        await send_whatsapp_message(sender, reply_text)
+        await send_whatsapp_message(sender, reply_text, phone_number_id=phone_number_id)
     except Exception as exc:
         logger.exception("WhatsApp send failed for sender {}: {}", sender, exc)
 

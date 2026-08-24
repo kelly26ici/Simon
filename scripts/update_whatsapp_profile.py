@@ -24,7 +24,7 @@ else:
     load_dotenv(override=True)
 
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "").strip()
-META_PHONE_NUMBER_ID = os.getenv("META_PHONE_NUMBER_ID", "1229045376955799").strip()
+META_PHONE_NUMBER_ID = os.getenv("META_PHONE_NUMBER_ID", "1271013182763553").strip()
 META_WABA_ID = os.getenv("META_WABA_ID", "988741520452943").strip()
 META_GRAPH_API_VERSION = os.getenv("META_GRAPH_API_VERSION", "v21.0").strip()
 META_GRAPH_BASE_URL = os.getenv("META_GRAPH_BASE_URL", "https://graph.facebook.com").strip()

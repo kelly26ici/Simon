@@ -8,6 +8,7 @@ class IncomingMessage:
     sender: str    # customer's phone number — used as the conversation key
     msg_type: str  # "text", "image", "audio", "interactive", etc.
     raw: dict      # the original message object, for handlers to pull from
+    phone_number_id: Optional[str] = None  # recipient phone number ID from webhook metadata
 
 
 def parse_incoming(data: dict) -> Optional[IncomingMessage]:
@@ -23,11 +24,13 @@ def parse_incoming(data: dict) -> Optional[IncomingMessage]:
         if not messages:
             return None
 
+        phone_number_id = value.get("metadata", {}).get("phone_number_id")
         msg = messages[0]
         return IncomingMessage(
             sender=msg["from"],
             msg_type=msg["type"],
             raw=msg,
+            phone_number_id=phone_number_id,
         )
     except (KeyError, IndexError):
         return None
