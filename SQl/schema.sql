@@ -264,6 +264,32 @@ CREATE TRIGGER trg_conversation_summaries_modified_at
     EXECUTE FUNCTION update_modified_column();
 
 -- ============================================================================
+-- CONVERSATION MESSAGES (permanent full message history)
+-- ============================================================================
+-- Every user and assistant message is persisted here as a write-through shadow
+-- of the Redis history cache. If Redis is flushed or the process restarts,
+-- the full conversation can be reconstructed from this table.
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id              BIGSERIAL PRIMARY KEY,
+    whatsapp_id     TEXT NOT NULL,
+    role            TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content         JSONB NOT NULL,
+    -- WhatsApp's globally unique inbound message ID. A nullable UNIQUE column
+    -- permits assistant/system messages while making webhook retries idempotent.
+    wamid           TEXT UNIQUE,
+    source          TEXT NOT NULL DEFAULT 'whatsapp',
+    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_msg_whatsapp_created
+    ON conversation_messages (whatsapp_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_conv_msg_created
+    ON conversation_messages (created_at);
+
+-- ============================================================================
 -- BOT SETTINGS / OWNER CONFIG
 -- ============================================================================
 

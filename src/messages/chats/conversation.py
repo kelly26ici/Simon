@@ -1,6 +1,6 @@
 # src/messages/chats/conversation.py
 
-from src.configs.settings import MAX_HISTORY
+from src.configs.settings import MAX_HISTORY, CONVERSATION_TTL_SECONDS
 from src.core.redis import RedisStore
 
 _conversations = RedisStore(prefix="history")
@@ -10,7 +10,7 @@ async def get_history(sender: str) -> list[dict]:
     history = await _conversations.get(sender)
     if history is None:
         history = []
-        await _conversations.set(sender, history)
+        await _conversations.set(sender, history, ex=CONVERSATION_TTL_SECONDS)
     return history
 
 
@@ -31,7 +31,7 @@ async def append_message(sender: str, role: str, content: str):
 
     if len(history) > MAX_HISTORY:
         history = history[-MAX_HISTORY:]
-    await _conversations.set(sender, history)
+    await _conversations.set(sender, history, ex=CONVERSATION_TTL_SECONDS)
 
 
 async def append_interaction_steps(sender: str, steps) -> None:
@@ -49,4 +49,4 @@ async def append_interaction_steps(sender: str, steps) -> None:
 
     if len(history) > MAX_HISTORY:
         history = history[-MAX_HISTORY:]
-    await _conversations.set(sender, history)
+    await _conversations.set(sender, history, ex=CONVERSATION_TTL_SECONDS)

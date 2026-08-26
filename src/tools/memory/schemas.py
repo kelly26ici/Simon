@@ -71,3 +71,12 @@ class CheckPaymentHistorySchema(BaseModel):
 class GetCustomerPreferencesSchema(BaseModel):
     """Input for get_customer_preferences tool."""
     phone_number: str = Field(..., description="The customer's WhatsApp ID/phone number")
+
+
+class SearchConversationHistorySchema(BaseModel):
+    """Input for search_past_conversations tool."""
+    phone_number: str
+    limit: int = Field(default=20, description="Max messages (default 20, max 100)")
+    offset: int = Field(default=0, description="Pagination offset")
+    start_date: Optional[str] = Field(default=None, description="ISO 8601 date filter")
+    end_date: Optional[str] = Field(default=None, description="ISO 8601 date filter")

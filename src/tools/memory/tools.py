@@ -6,6 +6,7 @@ from src.tools.memory.schemas import (
     NotifyOwnerSchema,
     CheckPaymentHistorySchema,
     GetCustomerPreferencesSchema,
+    SearchConversationHistorySchema,
 )
 from src.services.db import db
 
@@ -134,3 +135,43 @@ async def check_payment_history(payload: CheckPaymentHistorySchema) -> dict:
     has_paid = await db.check_payment_history(payload.phone_number)
     logger.success("Payment history checked | phone={} has_paid={}", payload.phone_number, has_paid)
     return {"has_paid": has_paid}
+
+
+@registry.register("search_past_conversations", SearchConversationHistorySchema)
+async def search_past_conversations(payload: SearchConversationHistorySchema) -> dict:
+    """Retrieve past conversation messages for this customer from permanent storage.
+
+    Use this when the customer references something discussed earlier that is
+    no longer in the current Redis context window — e.g. a property they were
+    interested in last week, a viewing they booked, or their stated budget.
+    """
+    messages = await db.get_messages(
+        payload.phone_number,
+        limit=max(1, min(payload.limit, 100)),
+        offset=max(0, payload.offset),
+    )
+    if not messages:
+        logger.info("No past conversation messages found for {}", payload.phone_number)
+        return {"status": "empty", "history": "No past conversation history found for this customer."}
+
+    lines: list[str] = []
+    for m in messages:
+        ts = m.get("created_at", "") or ""
+        role = m.get("role", "unknown")
+        content = m.get("content") or {}
+        text = ""
+        if isinstance(content, dict):
+            parts = content.get("content") or []
+            if parts and isinstance(parts, list):
+                first = parts[0]
+                if isinstance(first, dict):
+                    text = first.get("text", "") or ""
+        if not text and isinstance(content, str):
+            text = content
+        lines.append(f"[{ts}] {role}: {text[:500]}")
+
+    history = "\n".join(lines)
+    logger.success(
+        "Past conversation retrieved | phone={} messages={}", payload.phone_number, len(messages)
+    )
+    return {"status": "success", "history": history}

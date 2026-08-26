@@ -140,6 +140,101 @@ class DatabaseClient:
         return None
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # Conversation Messages (full persistent history)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def save_message(
+        self,
+        whatsapp_id: str,
+        role: str,
+        content: Any,
+        wamid: Optional[str] = None,
+        source: str = "whatsapp",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Persist a single conversation message. Idempotent: if wamid is provided
+        and a row with that wamid already exists, the insert is silently skipped
+        (no duplicate rows for webhook retries).
+
+        Returns the inserted row (with id + created_at) or None on failure.
+        """
+        if not self.client:
+            return None
+
+        payload = {
+            "whatsapp_id": whatsapp_id,
+            "role": role,
+            "content": content,
+            "wamid": wamid,
+            "source": source,
+            "metadata": metadata or {},
+        }
+
+        def _insert():
+            try:
+                if wamid:
+                    res = (
+                        self.client.table("conversation_messages")
+                        .upsert(payload, on_conflict="wamid")
+                        .execute()
+                    )
+                else:
+                    res = (
+                        self.client.table("conversation_messages")
+                        .insert(payload)
+                        .execute()
+                    )
+                return res.data[0] if res.data else None
+            except Exception as exc:
+                logger.debug("conversation_messages insert skipped/failed: {}", exc)
+                return None
+
+        try:
+            return await self._run_sync(_insert)
+        except Exception as exc:
+            logger.debug("Could not execute conversation_messages insert: {}", exc)
+            return None
+
+    async def get_messages(
+        self,
+        whatsapp_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Fetch persistent message history for a customer, newest-first.
+        Returns rows ordered by created_at DESC with pagination support.
+        Each row: {id, whatsapp_id, role, content, wamid, source, metadata, created_at}.
+        """
+        if not self.client:
+            return []
+
+        # Keep callers from accidentally issuing an invalid or unbounded range.
+        limit = max(1, min(limit, 100))
+        offset = max(0, offset)
+
+        def _get():
+            try:
+                res = (
+                    self.client.table("conversation_messages")
+                    .select("id, whatsapp_id, role, content, wamid, source, metadata, created_at")
+                    .eq("whatsapp_id", whatsapp_id)
+                    .order("created_at", desc=True)
+                    .order("id", desc=True)
+                    .range(offset, offset + limit - 1)
+                    .execute()
+                )
+                return res.data or []
+            except Exception as exc:
+                logger.debug("conversation_messages select failed: {}", exc)
+                return []
+
+        try:
+            return await self._run_sync(_get)
+        except Exception as exc:
+            logger.debug("Error fetching conversation messages: {}", exc)
+            return []
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # Bot / Owner System Settings
     # ═══════════════════════════════════════════════════════════════════════════
 

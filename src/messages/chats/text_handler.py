@@ -109,6 +109,23 @@ async def handle_text(sender: str, msg: dict, phone_number_id: str | None = None
     message_id = msg["id"]  # WAMID of the inbound message — needed for typing indicator
 
     await append_message(sender, "user", user_text)
+
+    # Write-through: persist user message to Supabase durable store
+    try:
+        await db.save_message(
+            whatsapp_id=sender,
+            role="user",
+            content={
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_text}],
+            },
+            wamid=msg.get("id"),
+            source="whatsapp",
+            metadata={"phone_number_id": phone_number_id} if phone_number_id else {},
+        )
+    except Exception as exc:
+        logger.warning("DB save_message (user) failed for {}: {}", sender, exc)
+
     history = await get_history(sender)
     customer_context = await _build_customer_context_string(sender)
 
@@ -129,6 +146,20 @@ async def handle_text(sender: str, msg: dict, phone_number_id: str | None = None
         logger.error("LLM error for sender {}: {}: {}", sender, type(exc).__name__, str(exc))
         fallback = _customer_message_for_llm_error(exc)
         await append_message(sender, "assistant", fallback)
+
+        try:
+            await db.save_message(
+                whatsapp_id=sender,
+                role="assistant",
+                content={
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": fallback}],
+                },
+                source="whatsapp",
+            )
+        except Exception as exc2:
+            logger.warning("DB save_message (assistant) failed for {}: {}", sender, exc2)
+
         await send_whatsapp_message(sender, fallback, phone_number_id=phone_number_id)
         return
     except Exception as exc:
@@ -139,6 +170,20 @@ async def handle_text(sender: str, msg: dict, phone_number_id: str | None = None
             "or call us at 0701 454 854. 😊"
         )
         await append_message(sender, "assistant", fallback)
+
+        try:
+            await db.save_message(
+                whatsapp_id=sender,
+                role="assistant",
+                content={
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": fallback}],
+                },
+                source="whatsapp",
+            )
+        except Exception as exc2:
+            logger.warning("DB save_message (assistant) failed for {}: {}", sender, exc2)
+
         await send_whatsapp_message(sender, fallback, phone_number_id=phone_number_id)
         return
 
@@ -152,10 +197,38 @@ async def handle_text(sender: str, msg: dict, phone_number_id: str | None = None
             "I didn't quite get a response there. Could you rephrase that, or try again in a moment? 😊"
         )
         await append_message(sender, "assistant", fallback)
+
+        try:
+            await db.save_message(
+                whatsapp_id=sender,
+                role="assistant",
+                content={
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": fallback}],
+                },
+                source="whatsapp",
+            )
+        except Exception as exc2:
+            logger.warning("DB save_message (assistant) failed for {}: {}", sender, exc2)
+
         await send_whatsapp_message(sender, fallback, phone_number_id=phone_number_id)
         return
 
     await append_message(sender, "assistant", reply_text)
+
+    # Write-through: persist assistant reply to Supabase durable store
+    try:
+        await db.save_message(
+            whatsapp_id=sender,
+            role="assistant",
+            content={
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": reply_text}],
+            },
+            source="whatsapp",
+        )
+    except Exception as exc2:
+        logger.warning("DB save_message (assistant) failed for {}: {}", sender, exc2)
 
     try:
         await send_whatsapp_message(sender, reply_text, phone_number_id=phone_number_id)

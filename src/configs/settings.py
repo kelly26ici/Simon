@@ -53,6 +53,12 @@ META_GRAPH_BASE_URL=os.getenv("META_GRAPH_BASE_URL", "https://graph.facebook.com
 
 MAX_HISTORY = int(os.getenv("MAX_HISTORY", "10"))
 
+# How long a conversation's Redis history key lives without activity before
+# automatic eviction. When a customer goes silent for this many days, the
+# next message starts a fresh context window. The full history is preserved
+# in Supabase conversation_messages if it was ever persisted.
+CONVERSATION_TTL_SECONDS = int(os.getenv("CONVERSATION_TTL_SECONDS", str(7 * 24 * 3600)))  # 7 days
+
 
 #======================================================
 #                     FORMATTING
