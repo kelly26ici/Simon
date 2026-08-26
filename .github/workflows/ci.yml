@@ -53,3 +53,14 @@ jobs:
           SHORTCODE: "test"
           CALLBACK_URL: "https://test.example.com/callback"
           MPESA_WEBHOOK_SECRET: "test-secret"
+
+      - name: Secret scan
+        run: |
+          if git ls-files | grep -E '\.env($|\..+$)|Samantha\.env'; then
+            echo "::error::Tracked env file detected"
+            exit 1
+          fi
+          if git ls-files | xargs grep -nE '(api[_-]?key|secret|token|password|passkey|private[_-]?key)\s*[:=]\s*["\047][a-zA-Z0-9+/\_=-]{20,}["\047]' 2>/dev/null; then
+            echo "::error::Potential hardcoded secret value detected in tracked files"
+            exit 1
+          fi

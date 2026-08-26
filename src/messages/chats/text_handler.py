@@ -126,7 +126,7 @@ async def handle_text(sender: str, msg: dict, phone_number_id: str | None = None
         reply = await ask_llm(history, customer_context=customer_context)
     except (LLMRateLimitError, LLMAuthenticationError, LLMServiceUnavailableError, LLMError) as exc:
         # These are typed, known LLM failures — give the customer a specific message.
-        logger.error("LLM error for sender {}: {}: {}", sender, type(exc).__name__, exc)
+        logger.error("LLM error for sender {}: {}: {}", sender, type(exc).__name__, str(exc))
         fallback = _customer_message_for_llm_error(exc)
         await append_message(sender, "assistant", fallback)
         await send_whatsapp_message(sender, fallback, phone_number_id=phone_number_id)

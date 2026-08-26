@@ -12,6 +12,7 @@ not just this app-level check.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, Request, HTTPException
@@ -24,6 +25,9 @@ from src.tools.mpesa.store import transaction_store
 from src.tools.mpesa.schemas import TransactionState
 
 router = APIRouter(prefix="/mpesa", tags=["mpesa-webhooks"])
+
+# Short-lived dedupe window for Daraja callback retries/replays.
+_DEDUPE_WINDOW_SECONDS = 600
 
 
 def _check_secret(secret: str) -> None:
@@ -44,6 +48,18 @@ async def _parse_json_body(request: Request) -> dict[str, Any]:
         logger.warning("Expected JSON object in request body, got {}", type(data).__name__)
         return {}
     return data
+
+
+async def _mark_seen(checkout_request_id: str, trans_id: str | None = None) -> bool:
+    keys = [f"seen:{checkout_request_id}"]
+    if trans_id:
+        keys.append(f"seen:{trans_id}")
+    for key in keys:
+        already = await transaction_store.get(key)
+        if already:
+            return False
+        await transaction_store.set(key, {"seen_at": int(time.time())}, ex=_DEDUPE_WINDOW_SECONDS)
+    return True
 
 
 @router.post("/callback/{secret}")
@@ -82,6 +98,9 @@ async def handle_stk_callback(secret: str, request: Request):
         result_desc = stk_callback.get("ResultDesc", "Unknown error")
         state = TransactionState.CANCELLED if result_code == 1032 else TransactionState.FAILED
         logger.info("STK {}: {} - {}", state.value, checkout_request_id, result_desc)
+        if not await _mark_seen(checkout_request_id):
+            logger.info("Duplicate STK callback ignored: {}", checkout_request_id)
+            return ack
         await transaction_store.update(checkout_request_id, state=state.value, result_desc=result_desc)
         return ack
 
@@ -93,6 +112,10 @@ async def handle_stk_callback(secret: str, request: Request):
         await transaction_store.update(
             checkout_request_id, state=TransactionState.FAILED.value, result_desc="Malformed callback"
         )
+        return ack
+
+    if not await _mark_seen(checkout_request_id):
+        logger.info("Duplicate STK success callback ignored: {}", checkout_request_id)
         return ack
 
     mpesa_receipt = metadata.get("MpesaReceiptNumber")
@@ -151,6 +174,10 @@ async def handle_c2b_confirmation(secret: str, request: Request):
     trans_id = confirmation_data.get("TransID")
     if not trans_id:
         logger.warning("C2B confirmation missing TransID: {}", confirmation_data)
+        return JSONResponse(content={"ResultCode": 0, "ResultDesc": "Completed"})
+
+    if not await _mark_seen("", trans_id=trans_id):
+        logger.info("Duplicate C2B confirmation ignored: {}", trans_id)
         return JSONResponse(content={"ResultCode": 0, "ResultDesc": "Completed"})
 
     await transaction_store.set(

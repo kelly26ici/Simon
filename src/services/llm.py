@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, List, Optional, Tuple
 from openai import (
     AsyncOpenAI,
@@ -26,6 +27,7 @@ from src.configs.settings import (
     LLM_BASE_URL,
     LLM_API_KEY,
     LLM_MODEL,
+    LLM_TEMPERATURE,
 )
 from src.configs.constants import GROQ_MODEL, OPENROUTER_MODEL, NVIDIA_MODEL
 from src.tools.registry import registry
@@ -45,6 +47,21 @@ class LLMAuthenticationError(Exception):
 
 class LLMError(Exception):
     """Generic fallback for unexpected LLM/API failures."""
+
+
+_SECRET_PATTERNS = [
+    ("api_key", r"(?i)(api[_-]?key|apikey)\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{20,})['\"]?"),
+    ("token", r"(?i)(token|access_token)\s*[:=]\s*['\"]?([A-Za-z0-9_\-\.]{20,})['\"]?"),
+    ("password", r"(?i)(password|passkey|pass)\s*[:=]\s*['\"]?([^\s'\"]{8,})['\"]?"),
+    ("secret", r"(?i)(secret)\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{20,})['\"]?"),
+]
+
+
+def _sanitize(text: str) -> str:
+    sanitized = text
+    for _name, pattern in _SECRET_PATTERNS:
+        sanitized = re.sub(pattern, r"\1: [REDACTED]", sanitized)
+    return sanitized
 
 
 def resolve_llm_config() -> Tuple[str, str, str, str]:
@@ -97,13 +114,20 @@ MODEL_NAME = _active_model
 MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "4096"))
 MAX_TOOL_ITERATIONS = int(os.getenv("LLM_MAX_TOOL_ITERATIONS", "10"))
 
+try:
+    _raw_temp = float(LLM_TEMPERATURE)
+    TEMPERATURE = max(0.0, min(2.0, _raw_temp))
+except (TypeError, ValueError):
+    TEMPERATURE = 2.0
+
 
 def _classify_openai_exception(exc: Exception) -> Exception:
     """Map upstream OpenAI exceptions into semantic application error classes."""
+    sanitized = _sanitize(str(exc))
     if isinstance(exc, RateLimitError):
-        return LLMRateLimitError(f"LLM API rate limited: {exc}")
+        return LLMRateLimitError(f"LLM API rate limited: {sanitized}")
     if isinstance(exc, (AuthenticationError, PermissionDeniedError)):
-        return LLMAuthenticationError(f"LLM API authentication/permission error: {exc}")
+        return LLMAuthenticationError(f"LLM API authentication/permission error: {sanitized}")
     if isinstance(exc, APIStatusError):
         status = getattr(exc, "status_code", None)
         body = ""
@@ -111,6 +135,7 @@ def _classify_openai_exception(exc: Exception) -> Exception:
             body = exc.response.text if exc.response is not None else ""
         except Exception:
             body = ""
+        body = _sanitize(body)
         if status in (401, 403):
             return LLMAuthenticationError(f"LLM API forbidden/unauthorized {status}: {body}".strip())
         if status and status >= 500:
@@ -119,10 +144,10 @@ def _classify_openai_exception(exc: Exception) -> Exception:
             )
         return LLMError(f"LLM API status error {status}: {body}".strip())
     if isinstance(exc, APIConnectionError):
-        return LLMServiceUnavailableError(f"LLM API connection error: {exc}")
+        return LLMServiceUnavailableError(f"LLM API connection error: {sanitized}")
     if isinstance(exc, APIError):
-        return LLMError(f"LLM API error: {exc}")
-    return LLMError(f"Unexpected LLM error: {exc}")
+        return LLMError(f"LLM API error: {sanitized}")
+    return LLMError(f"Unexpected LLM error: {sanitized}")
 
 
 def _build_openai_messages(history: list[dict], customer_context: Optional[str] = None) -> list[dict]:
@@ -234,6 +259,7 @@ async def ask_llm(
             "model": MODEL_NAME,
             "messages": messages,
             "max_tokens": MAX_OUTPUT_TOKENS,
+            "temperature": TEMPERATURE,
         }
         if tools:
             kwargs["tools"] = _format_tools(tools)
@@ -242,17 +268,17 @@ async def ask_llm(
         try:
             response = await client.chat.completions.create(**kwargs)
         except RateLimitError as exc:
-            logger.warning("LLM rate limited on iteration {}: {}", iteration, exc)
+            logger.warning("LLM rate limited on iteration {}: {}", iteration, _sanitize(str(exc)))
             raise _classify_openai_exception(exc)
         except APIStatusError as exc:
             status = getattr(exc, "status_code", None)
-            logger.error("LLM API status error {} on iteration {}: {}", status, iteration, exc)
+            logger.error("LLM API status error {} on iteration {}: {}", status, iteration, _sanitize(str(exc)))
             raise _classify_openai_exception(exc)
         except APIConnectionError as exc:
-            logger.error("LLM connection error on iteration {}: {}", iteration, exc)
+            logger.error("LLM connection error on iteration {}: {}", iteration, _sanitize(str(exc)))
             raise _classify_openai_exception(exc)
         except APIError as exc:
-            logger.error("LLM API error on iteration {}: {}", iteration, exc)
+            logger.error("LLM API error on iteration {}: {}", iteration, _sanitize(str(exc)))
             raise _classify_openai_exception(exc)
         except Exception as exc:
             logger.exception("Unexpected error calling LLM on iteration {}", iteration)
@@ -322,7 +348,7 @@ async def ask_llm(
                 # decide whether to retry, use a fallback tool, or explain to the
                 # customer.  Crashing the loop here would give the customer a
                 # generic error message with no actionable context.
-                error_detail = str(exc).strip() or repr(exc)
+                error_detail = _sanitize(str(exc).strip() or repr(exc))
                 logger.error(
                     "Tool '{}' [call_id={}] raised during iteration {}: {}",
                     name, call_id, iteration, error_detail,

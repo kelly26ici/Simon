@@ -2,13 +2,17 @@ from openai import OpenAI
 import os
 import sys
 
+api_key = os.getenv("NVIDIA_API_KEY", "")
+if not api_key:
+    raise SystemExit("NVIDIA_API_KEY is not set")
+
 _USE_COLOR = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
 _REASONING_COLOR = "\033[90m" if _USE_COLOR else ""
 _RESET_COLOR = "\033[0m" if _USE_COLOR else ""
 
 client = OpenAI(
   base_url = "https://integrate.api.nvidia.com/v1",
-  api_key = "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"
+  api_key = api_key,
 )
 
 

@@ -16,13 +16,11 @@ async def _keep_alive():
     while True:
         try:
             client = get_http_client()
-            response = await client.get(RENDER_BASE_URL, timeout=10.0)
-            logger.info("Keep-alive ping successful: Status {}", response.status_code)
+            await client.get(RENDER_BASE_URL, timeout=10.0)
         except asyncio.CancelledError:
-            logger.info("Keep-alive task stopped.")
             break
-        except Exception as exc:
-            logger.exception("Error pinging uptime endpoint: {}", exc)
+        except Exception:
+            pass
 
         await asyncio.sleep(300)
 
@@ -33,23 +31,12 @@ async def _keep_databases_alive():
 
     while True:
         try:
-            sb_ok = await asyncio.to_thread(ping_supabase)
-            qd_ok = await asyncio.to_thread(ping_qdrant)
-
-            if sb_ok:
-                logger.info("Supabase database keep-alive ping successful.")
-            else:
-                logger.warning("Supabase database keep-alive ping returned failure.")
-
-            if qd_ok:
-                logger.info("Qdrant cluster keep-alive ping successful.")
-            else:
-                logger.warning("Qdrant cluster keep-alive ping returned failure.")
+            await asyncio.to_thread(ping_supabase)
+            await asyncio.to_thread(ping_qdrant)
         except asyncio.CancelledError:
-            logger.info("Database keep-alive task stopped.")
             break
-        except Exception as exc:
-            logger.exception("Error during database keep-alive task: {}", exc)
+        except Exception:
+            pass
 
         # Ping every 6 hours (21,600 seconds)
         await asyncio.sleep(21600)

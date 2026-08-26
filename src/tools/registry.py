@@ -1,11 +1,27 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Type
 
 from loguru import logger
 from pydantic import BaseModel, ValidationError
+
+
+_SECRET_PATTERNS = [
+    ("api_key", r"(?i)(api[_-]?key|apikey)\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{20,})['\"]?"),
+    ("token", r"(?i)(token|access_token)\s*[:=]\s*['\"]?([A-Za-z0-9_\-\.]{20,})['\"]?"),
+    ("password", r"(?i)(password|passkey|pass)\s*[:=]\s*['\"]?([^\s'\"]{8,})['\"]?"),
+    ("secret", r"(?i)(secret)\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{20,})['\"]?"),
+]
+
+
+def _sanitize(text: str) -> str:
+    sanitized = text
+    for _name, pattern in _SECRET_PATTERNS:
+        sanitized = re.sub(pattern, r"\1: [REDACTED]", sanitized)
+    return sanitized
 
 
 @dataclass(slots=True)
@@ -81,7 +97,7 @@ class ToolRegistry:
             args_dict = json.loads(raw_arguments)
             validated_args = tool.schema.model_validate(args_dict)
         except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning("Bad arguments for tool '{}': {}", tool_name, e)
+            logger.warning("Bad arguments for tool '{}': {}", tool_name, _sanitize(str(e)))
             return self._output(call_id, {"error": f"Invalid arguments supplied to '{tool_name}'."})
 
         logger.debug("Executing tool '{}' with arguments {}", tool_name, validated_args.model_dump())
@@ -97,7 +113,7 @@ class ToolRegistry:
             # the agent can tell the customer "the database is unavailable" vs "the
             # data isn't there" and stop retrying.
             error_cls = type(exc).__name__
-            detail = str(exc).strip() or repr(exc)
+            detail = _sanitize(str(exc).strip() or repr(exc))
             cause = self._classify_error(exc)
             return self._output(call_id, {
                 "error": f"Tool '{tool_name}' failed: {cause}",
