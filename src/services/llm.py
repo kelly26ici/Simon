@@ -90,7 +90,7 @@ def resolve_llm_config() -> Tuple[str, str, str, str]:
 
     # 3. Auto-detection priority:
     # NVIDIA → OpenRouter → Groq
-    # NVIDIA is preferred: aligns with project’s step‑function flash model and lower latency.
+    # NVIDIA is preferred: aligns with the configured Laguna model and lower latency.
     if NVIDIA_API_KEY:
         return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
     if OPENROUTER_API_KEY:

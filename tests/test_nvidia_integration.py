@@ -3,7 +3,7 @@ tests/test_nvidia_integration.py
 
 Integration tests for NVIDIA NIM OpenAI-compatible API.
 Tests live connectivity, model catalog availability, chat completions,
-and function/tool calling with stepfun-ai/step-3.7-flash.
+and function/tool calling with nvidia_nim/poolside/laguna-xs-2.1.
 """
 
 import os
@@ -15,7 +15,7 @@ load_dotenv(override=True)
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_MODEL = "stepfun-ai/step-3.7-flash"
+NVIDIA_MODEL = "nvidia_nim/poolside/laguna-xs-2.1"
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ async def test_nvidia_models_list(nvidia_client):
 
 @pytest.mark.asyncio
 async def test_nvidia_chat_completion(nvidia_client):
-    """Verify standard chat completion works with stepfun-ai/step-3.7-flash."""
+    """Verify standard chat completion works with the Laguna model."""
     response = await nvidia_client.chat.completions.create(
         model=NVIDIA_MODEL,
         messages=[

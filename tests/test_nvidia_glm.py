@@ -1,4 +1,4 @@
-"""Test the NVIDIA NIM API connection with the stepfun-ai/step-3.7-flash model.
+"""Test the NVIDIA NIM API connection with the Laguna model.
 
 Run with:
     uv run pytest tests/test_nvidia_glm.py
@@ -11,11 +11,11 @@ from openai import OpenAI
 
 load_dotenv(override=True)
 
-MODEL = "stepfun-ai/step-3.7-flash"
+MODEL = "nvidia_nim/poolside/laguna-xs-2.1"
 BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
-def test_nvidia_flash_connection() -> None:
+def test_nvidia_laguna_connection() -> None:
     api_key = os.getenv("NVIDIA_API_KEY")
     if not api_key:
         pytest.skip("NVIDIA_API_KEY is not set")
@@ -40,6 +40,6 @@ def test_nvidia_flash_connection() -> None:
 
 
 if __name__ == "__main__":
-    test_nvidia_flash_connection()
+    test_nvidia_laguna_connection()
     print("NVIDIA test passed successfully.")
 

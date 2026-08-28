@@ -51,7 +51,7 @@ def test_anthropic_endpoint():
     there is no point testing 100 models individually.
     """
 
-    model = "stepfun-ai/step-3.7-flash"
+    model = "nvidia_nim/poolside/laguna-xs-2.1"
 
     payload = {
         "model": model,
