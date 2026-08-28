@@ -11,7 +11,7 @@ from openai import OpenAI
 
 load_dotenv(override=True)
 
-MODEL = "nvidia_nim/poolside/laguna-xs-2.1"
+MODEL = "poolside/laguna-xs-2.1"
 BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 

@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import src.services.llm as llm_service
 from src.services.llm import (
     ask_gpt,
     LLMError,
@@ -72,6 +73,37 @@ def _api_status_error(status: int, message: str = "error"):
         ),
     )
     return APIStatusError(message=message, response=resp, body=None)
+
+
+# ─── Provider model resolution ───────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "configured_model",
+    [
+        "stepfun-ai/step-3.7-flash",
+        "nvidia_nim/poolside/laguna-xs-2.1",
+    ],
+)
+def test_nvidia_resolution_replaces_invalid_model_override(monkeypatch, configured_model):
+    monkeypatch.setattr(llm_service, "NVIDIA_API_KEY", "test-key")
+    monkeypatch.setattr(llm_service, "LLM_PROVIDER", "nvidia")
+    monkeypatch.setattr(llm_service, "LLM_MODEL", configured_model)
+
+    provider, _base_url, _api_key, model = llm_service.resolve_llm_config()
+
+    assert provider == "nvidia"
+    assert model == "poolside/laguna-xs-2.1"
+
+
+def test_nvidia_resolution_preserves_active_model_override(monkeypatch):
+    monkeypatch.setattr(llm_service, "NVIDIA_API_KEY", "test-key")
+    monkeypatch.setattr(llm_service, "LLM_PROVIDER", "nvidia")
+    monkeypatch.setattr(llm_service, "LLM_MODEL", "some-active-nvidia-model")
+
+    _provider, _base_url, _api_key, model = llm_service.resolve_llm_config()
+
+    assert model == "some-active-nvidia-model"
 
 
 # ─── Happy path (no tool calls) ──────────────────────────────────────────────

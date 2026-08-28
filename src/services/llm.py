@@ -49,6 +49,29 @@ class LLMError(Exception):
     """Generic fallback for unexpected LLM/API failures."""
 
 
+# Render deployments may still have a retired model or provider-prefixed model
+# ID in the generic LLM_MODEL environment variable. Keep invalid overrides from
+# winning over the current NVIDIA default while preserving active model overrides.
+_INVALID_NVIDIA_MODEL_OVERRIDES = frozenset(
+    {
+        "stepfun-ai/step-3.7-flash",
+        "nvidia_nim/poolside/laguna-xs-2.1",
+    }
+)
+
+
+def _nvidia_model() -> str:
+    if LLM_MODEL and LLM_MODEL not in _INVALID_NVIDIA_MODEL_OVERRIDES:
+        return LLM_MODEL
+    if LLM_MODEL in _INVALID_NVIDIA_MODEL_OVERRIDES:
+        logger.warning(
+            "Ignoring invalid NVIDIA model override '{}' and using '{}'",
+            LLM_MODEL,
+            NVIDIA_MODEL,
+        )
+    return NVIDIA_MODEL
+
+
 _SECRET_PATTERNS = [
     ("api_key", r"(?i)(api[_-]?key|apikey)\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{20,})['\"]?"),
     ("token", r"(?i)(token|access_token)\s*[:=]\s*['\"]?([A-Za-z0-9_\-\.]{20,})['\"]?"),
@@ -72,7 +95,7 @@ def resolve_llm_config() -> Tuple[str, str, str, str]:
     Priority:
     1. Explicit custom LLM_BASE_URL + LLM_API_KEY
     2. Explicit LLM_PROVIDER environment variable
-    3. Auto-detection: OpenRouter (full tool-call support + high TPM) → Groq → NVIDIA
+    3. Auto-detection: NVIDIA → OpenRouter → Groq
     """
     # 1. Custom explicit configuration
     if LLM_BASE_URL and LLM_API_KEY:
@@ -86,20 +109,20 @@ def resolve_llm_config() -> Tuple[str, str, str, str]:
     if provider == "openrouter" and OPENROUTER_API_KEY:
         return "openrouter", "https://openrouter.ai/api/v1", OPENROUTER_API_KEY, LLM_MODEL or OPENROUTER_MODEL
     if provider == "nvidia" and NVIDIA_API_KEY:
-        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
+        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, _nvidia_model()
 
     # 3. Auto-detection priority:
     # NVIDIA → OpenRouter → Groq
     # NVIDIA is preferred: aligns with the configured Laguna model and lower latency.
     if NVIDIA_API_KEY:
-        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or NVIDIA_MODEL
+        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, _nvidia_model()
     if OPENROUTER_API_KEY:
         return "openrouter", "https://openrouter.ai/api/v1", OPENROUTER_API_KEY, LLM_MODEL or OPENROUTER_MODEL
     if GROQ_API_KEY:
         return "groq", "https://api.groq.com/openai/v1", GROQ_API_KEY, LLM_MODEL or GROQ_MODEL
 
     # Default fallback to NVIDIA model (even without key, will raise auth later)
-    return "nvidia", "https://integrate.api.nvidia.com/v1", "", LLM_MODEL or NVIDIA_MODEL
+    return "nvidia", "https://integrate.api.nvidia.com/v1", "", _nvidia_model()
 
 
 _active_provider, _active_base_url, _active_key, _active_model = resolve_llm_config()
@@ -272,7 +295,13 @@ async def ask_llm(
             raise _classify_openai_exception(exc)
         except APIStatusError as exc:
             status = getattr(exc, "status_code", None)
-            logger.error("LLM API status error {} on iteration {}: {}", status, iteration, _sanitize(str(exc)))
+            logger.error(
+                "LLM API status error {} on iteration {} model={}: {}",
+                status,
+                iteration,
+                MODEL_NAME,
+                _sanitize(str(exc)),
+            )
             raise _classify_openai_exception(exc)
         except APIConnectionError as exc:
             logger.error("LLM connection error on iteration {}: {}", iteration, _sanitize(str(exc)))
