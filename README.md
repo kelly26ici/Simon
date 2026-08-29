@@ -147,14 +147,14 @@ The current provider constants are defined in [`src/configs/constants.py`](src/c
 
 | Provider | Environment key | Default model |
 |---|---|---|
-| NVIDIA | `NVIDIA_API_KEY` | `poolside/laguna-xs-2.1` |
+| NVIDIA | `NVIDIA_API_KEY` | `deepseek-ai/deepseek-v4-flash-0731` |
 | OpenRouter | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` |
 | Groq | `GROQ_API_KEY` | `groq/compound` with `openai/gpt-oss-20b` fallback |
 | Custom OpenAI-compatible endpoint | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | The explicitly supplied model |
 
 The service maps rate-limit, authentication, availability, and generic failures to typed exceptions. Output tokens default to `4096`, tool iterations default to `10`, and `LLM_TEMPERATURE` is clamped to `0.0`–`2.0`.
 
-For deployment compatibility, the resolver ignores retired or provider-prefixed NVIDIA values if they remain in `LLM_MODEL` and uses the raw Laguna model ID instead. Other non-empty `LLM_MODEL` values remain valid explicit overrides. Restart the service after changing environment variables because the provider configuration is resolved at import time. The `nvidia_nim/` prefix is for provider-routing clients; NVIDIA's hosted endpoint expects `poolside/laguna-xs-2.1`.
+For deployment compatibility, the resolver ignores retired or provider-prefixed NVIDIA values if they remain in `LLM_MODEL` and uses the raw DeepSeek V4 Flash model ID instead. Other non-empty `LLM_MODEL` values remain valid explicit overrides. Restart the service after changing environment variables because the provider configuration is resolved at import time. The `nvidia_nim/` prefix is for provider-routing clients; NVIDIA's hosted endpoint expects `deepseek-ai/deepseek-v4-flash-0731`.
 
 `GEMINI_API_KEY` and the Gemini dependency are present in the project configuration, but the active resolver in `src/services/llm.py` does not currently select Gemini as a runtime provider. Do not describe Gemini as an active chat backend unless the resolver is updated.
 

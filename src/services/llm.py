@@ -55,7 +55,9 @@ class LLMError(Exception):
 _INVALID_NVIDIA_MODEL_OVERRIDES = frozenset(
     {
         "stepfun-ai/step-3.7-flash",
+        "poolside/laguna-xs-2.1",
         "nvidia_nim/poolside/laguna-xs-2.1",
+        "nvidia_nim/deepseek-ai/deepseek-v4-flash-0731",
     }
 )
 

@@ -82,7 +82,9 @@ def _api_status_error(status: int, message: str = "error"):
     "configured_model",
     [
         "stepfun-ai/step-3.7-flash",
+        "poolside/laguna-xs-2.1",
         "nvidia_nim/poolside/laguna-xs-2.1",
+        "nvidia_nim/deepseek-ai/deepseek-v4-flash-0731",
     ],
 )
 def test_nvidia_resolution_replaces_invalid_model_override(monkeypatch, configured_model):
@@ -93,7 +95,7 @@ def test_nvidia_resolution_replaces_invalid_model_override(monkeypatch, configur
     provider, _base_url, _api_key, model = llm_service.resolve_llm_config()
 
     assert provider == "nvidia"
-    assert model == "poolside/laguna-xs-2.1"
+    assert model == "deepseek-ai/deepseek-v4-flash-0731"
 
 
 def test_nvidia_resolution_preserves_active_model_override(monkeypatch):

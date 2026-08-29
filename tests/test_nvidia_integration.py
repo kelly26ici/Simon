@@ -3,7 +3,7 @@ tests/test_nvidia_integration.py
 
 Integration tests for NVIDIA NIM OpenAI-compatible API.
 Tests live connectivity, model catalog availability, chat completions,
-and function/tool calling with poolside/laguna-xs-2.1.
+and function/tool calling with deepseek-ai/deepseek-v4-flash-0731.
 """
 
 import os
@@ -15,7 +15,7 @@ load_dotenv(override=True)
 
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_MODEL = "poolside/laguna-xs-2.1"
+NVIDIA_MODEL = "deepseek-ai/deepseek-v4-flash-0731"
 
 
 @pytest.fixture

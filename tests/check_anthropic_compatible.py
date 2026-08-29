@@ -51,7 +51,7 @@ def test_anthropic_endpoint():
     there is no point testing 100 models individually.
     """
 
-    model = "poolside/laguna-xs-2.1"
+    model = "deepseek-ai/deepseek-v4-flash-0731"
 
     payload = {
         "model": model,
