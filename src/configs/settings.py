@@ -24,7 +24,12 @@ GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+_raw_nvidia_key = os.getenv("NVIDIA_API_KEY")
+# If GEMINI_API_KEY holds an nvapi-* key and NVIDIA_API_KEY is empty/invalid, fallback automatically
+if not _raw_nvidia_key and GEMINI_API_KEY and GEMINI_API_KEY.startswith("nvapi-"):
+    NVIDIA_API_KEY = GEMINI_API_KEY
+else:
+    NVIDIA_API_KEY = _raw_nvidia_key
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -33,6 +38,7 @@ LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 LLM_TEMPERATURE = os.getenv("LLM_TEMPERATURE", "0.7")
+LLM_RESET_COOLDOWN_SECONDS = int(os.getenv("LLM_RESET_COOLDOWN_SECONDS", "3600"))
 
 #======================================================
 #                    WHATSAPP

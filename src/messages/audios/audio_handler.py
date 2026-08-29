@@ -119,7 +119,7 @@ def _write_temp_audio(data: bytes, mime_type: Optional[str]) -> Path:
  offloading to a thread-pool adds overhead with no benefit.
  """
  fd, path = tempfile.mkstemp(
- prefix="samantha_audio_",
+ prefix="simon_audio_",
  suffix=_extension_for_mime(mime_type),
  )
  try:

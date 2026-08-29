@@ -1,6 +1,6 @@
 # src/cli.py
 """
-Samantha Real Estate CLI Utility.
+Simon Real Estate CLI Utility.
 Manage database, vectors, test agent tools, and run interactive terminal chat.
 """
 
@@ -28,7 +28,7 @@ from src.data.seed_properties import PROPERTIES_SEED_DATA
 async def cmd_status():
     """Check system status and connectivity."""
     print("=" * 60)
-    print(" SAMANTHA REAL ESTATE — SYSTEM HEALTH CHECK")
+    print(" SIMON REAL ESTATE — SYSTEM HEALTH CHECK")
     print("=" * 60)
 
     # 1. Supabase

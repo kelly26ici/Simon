@@ -1,6 +1,6 @@
-# Samantha — WhatsApp Real-Estate Agent
+# Simon — WhatsApp Real-Estate Agent
 
-Samantha is a FastAPI application for **Realtors Round Tables**, a Kenya-focused real-estate customer-service assistant. The customer-facing assistant identifies itself as **Simon**. It receives WhatsApp Cloud API messages, keeps per-customer context, searches property listings, schedules viewings, handles selected M-Pesa flows, and can notify the owner through Telegram.
+**Simon** is a FastAPI application for **Realtors Round Tables**, a Kenya-focused real-estate customer-service assistant. It receives WhatsApp Cloud API messages, keeps per-customer context, searches property listings, schedules viewings, handles selected M-Pesa flows, and can notify the owner through Telegram.
 
 The application combines:
 
@@ -8,7 +8,7 @@ The application combines:
 - Redis for short-lived conversation context and deduplication
 - Supabase/PostgreSQL for durable application data and conversation write-through
 - Qdrant plus Cloudflare Workers AI embeddings for semantic property search
-- An OpenAI-compatible Chat Completions client with model tool calling
+- An OpenAI-compatible Chat Completions client with an **auto-shifting model cascade (starting with Kimi K3, 2.8T MoE)** and seamless in-flight failover
 - Optional Tavily web search, Groq Whisper transcription, Telegram notifications, and Safaricom Daraja M-Pesa
 
 > This README documents the behavior implemented in the repository. Some entries in the Makefile and some older helper modules are legacy utilities and are not the application entrypoint.
@@ -132,7 +132,7 @@ The active integration uses the OpenAI-compatible **Chat Completions** API throu
 
 Tool failures are classified, sanitized, and returned to the model as structured output where possible. API keys, tokens, passwords, passkeys, and likely secrets are redacted from logs and error details.
 
-### Provider resolution
+### Provider resolution and Model Cascade
 
 [`resolve_llm_config()`](src/services/llm.py) resolves configuration in this order:
 
@@ -143,20 +143,27 @@ Tool failures are classified, sanitized, and returned to the model as structured
    - OpenRouter
    - Groq
 
-The current provider constants are defined in [`src/configs/constants.py`](src/configs/constants.py):
+The active NVIDIA integration uses a **dynamic, benchmark-ranked model cascade** managed by `ModelCascadeManager` in [`src/services/llm.py`](src/services/llm.py):
 
-| Provider | Environment key | Default model |
-|---|---|---|
-| NVIDIA | `NVIDIA_API_KEY` | `deepseek-ai/deepseek-v4-flash-0731` |
-| OpenRouter | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` |
-| Groq | `GROQ_API_KEY` | `groq/compound` with `openai/gpt-oss-20b` fallback |
-| Custom OpenAI-compatible endpoint | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | The explicitly supplied model |
+| Rank | Model ID | Parameter Scale | Primary Focus / Benchmark Strength |
+|---|---|---|---|
+| 1 | `moonshotai/kimi-k3` *(Default Primary)* | 2.8T MoE (104B active) | Frontier Tier #1 (~1500 Arena Elo, 88% MMLU-Pro, 93.5% GPQA Diamond) |
+| 2 | `minimaxai/minimax-m3` | 428B MoE (23B active) | Frontier MoE (84-87% MMLU-Pro, 92% GPQA Diamond, 1M context) |
+| 3 | `nvidia/nemotron-3-super-120b-a12b` | 120B Hybrid MoE | High-capacity reasoning brain (83.7% MMLU-Pro, 79.2% GPQA) |
+| 4 | `meta/llama-3.2-90b-vision-instruct` | 90B Dense | Dense reasoning and multimodal capabilities |
+| 5 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | 30B Omni | Dedicated reasoning chain-of-thought & tool calling |
+| 6 | `meta/muse-glimmer-30b` | 30B Dense | High agentic benchmark capability |
+| 7 | `nvidia/nemotron-3.5-lightning-30b-a3b` | 30B Dense | High-throughput instruct model |
+| 8 | `google/diffusiongemma-26b-a4b-it` | 26B Dense | High factual accuracy in 26B class |
+| 9 | `openai/gpt-oss-20b` | 20B Dense | Conversational baseline |
+| 10 | `meta/llama-3.2-11b-vision-instruct` | 11B Dense | Fast lightweight tool-execution model |
+| 11 | `poolside/laguna-xs-2.1` | Small Dense | Dialogue fallback |
+| 12 | `nvidia/nemotron-3-nano-30b-a3b` | 30B Nano | Emergency lightweight fallback |
 
-The service maps rate-limit, authentication, availability, and generic failures to typed exceptions. Output tokens default to `4096`, tool iterations default to `10`, and `LLM_TEMPERATURE` is clamped to `0.0`–`2.0`.
-
-For deployment compatibility, the resolver ignores retired or provider-prefixed NVIDIA values if they remain in `LLM_MODEL` and uses the raw DeepSeek V4 Flash model ID instead. Other non-empty `LLM_MODEL` values remain valid explicit overrides. Restart the service after changing environment variables because the provider configuration is resolved at import time. The `nvidia_nim/` prefix is for provider-routing clients; NVIDIA's hosted endpoint expects `deepseek-ai/deepseek-v4-flash-0731`.
-
-`GEMINI_API_KEY` and the Gemini dependency are present in the project configuration, but the active resolver in `src/services/llm.py` does not currently select Gemini as a runtime provider. Do not describe Gemini as an active chat backend unless the resolver is updated.
+#### Key Failover & Auto-Reset Behaviors:
+- **In-Flight Seamless Failover:** If an active model returns an error (429 rate limit, 5xx server error, timeout, or empty response), Simon immediately hands off the request to the next candidate model in the cascade on the same turn. The user never needs to re-type.
+- **1-Hour Auto-Reset Cooldown:** Whenever the model shifts down the cascade, a 1-hour timer (`LLM_RESET_COOLDOWN_SECONDS`, default 3600s) starts. Once 1 hour elapses, the active model automatically shifts back to **`moonshotai/kimi-k3`** as the top default.
+- **Reasoning Sanitization:** Models producing `<think>...</think>` chain-of-thought blocks are automatically sanitized so customers receive clean, user-facing text.
 
 ---
 
@@ -483,7 +490,7 @@ The application entrypoint is `src.main:app`.
 
 ```bash
 git clone <repo-url>
-cd Samantha
+cd Simon
 
 # Create and activate a virtual environment if desired
 uv venv

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import time
 from typing import Any, List, Optional, Tuple
 from openai import (
     AsyncOpenAI,
@@ -28,8 +30,16 @@ from src.configs.settings import (
     LLM_API_KEY,
     LLM_MODEL,
     LLM_TEMPERATURE,
+    LLM_RESET_COOLDOWN_SECONDS,
 )
-from src.configs.constants import GROQ_MODEL, OPENROUTER_MODEL, NVIDIA_MODEL
+from src.configs.constants import (
+    GROQ_MODEL,
+    OPENROUTER_MODEL,
+    NVIDIA_MODEL,
+    DEFAULT_NVIDIA_MODEL,
+    NVIDIA_CASCADE_MODELS,
+    MODEL_RESET_COOLDOWN_SECONDS,
+)
 from src.tools.registry import registry
 
 
@@ -49,29 +59,13 @@ class LLMError(Exception):
     """Generic fallback for unexpected LLM/API failures."""
 
 
-# Render deployments may still have a retired model or provider-prefixed model
-# ID in the generic LLM_MODEL environment variable. Keep invalid overrides from
-# winning over the current NVIDIA default while preserving active model overrides.
 _INVALID_NVIDIA_MODEL_OVERRIDES = frozenset(
     {
         "stepfun-ai/step-3.7-flash",
-        "poolside/laguna-xs-2.1",
         "nvidia_nim/poolside/laguna-xs-2.1",
         "nvidia_nim/deepseek-ai/deepseek-v4-flash-0731",
     }
 )
-
-
-def _nvidia_model() -> str:
-    if LLM_MODEL and LLM_MODEL not in _INVALID_NVIDIA_MODEL_OVERRIDES:
-        return LLM_MODEL
-    if LLM_MODEL in _INVALID_NVIDIA_MODEL_OVERRIDES:
-        logger.warning(
-            "Ignoring invalid NVIDIA model override '{}' and using '{}'",
-            LLM_MODEL,
-            NVIDIA_MODEL,
-        )
-    return NVIDIA_MODEL
 
 
 _SECRET_PATTERNS = [
@@ -89,15 +83,115 @@ def _sanitize(text: str) -> str:
     return sanitized
 
 
+class ModelCascadeManager:
+    """Manages dynamic LLM model failover, auto-shifting on error, and 1-hour cooldown auto-reset."""
+
+    def __init__(
+        self,
+        primary_model: str = DEFAULT_NVIDIA_MODEL,
+        cascade_models: list[str] | None = None,
+        reset_cooldown_seconds: float = MODEL_RESET_COOLDOWN_SECONDS,
+    ):
+        self.primary_model = primary_model
+        raw_cascade = list(cascade_models or NVIDIA_CASCADE_MODELS)
+        if self.primary_model not in raw_cascade:
+            raw_cascade.insert(0, self.primary_model)
+        else:
+            # Ensure primary_model is at index 0
+            raw_cascade.remove(self.primary_model)
+            raw_cascade.insert(0, self.primary_model)
+        self.cascade: list[str] = raw_cascade
+        self.reset_cooldown_seconds: float = reset_cooldown_seconds
+        self._current_index: int = 0
+        self._last_demote_time: float | None = None
+
+    def _check_auto_reset(self) -> None:
+        """If 1 hour has elapsed since last demote/failover, auto-reset back to primary model."""
+        if self._current_index != 0 and self._last_demote_time is not None:
+            elapsed = time.monotonic() - self._last_demote_time
+            if elapsed >= self.reset_cooldown_seconds:
+                old_model = self.cascade[self._current_index]
+                self._current_index = 0
+                self._last_demote_time = None
+                logger.info(
+                    "Auto-reset cooldown expired ({:.0f}s >= {:.0f}s) | Reshifting active LLM model from '{}' back to primary '{}'",
+                    elapsed,
+                    self.reset_cooldown_seconds,
+                    old_model,
+                    self.primary_model,
+                )
+
+    def get_active_model(self) -> str:
+        """Returns the current active model ID."""
+        self._check_auto_reset()
+        if 0 <= self._current_index < len(self.cascade):
+            return self.cascade[self._current_index]
+        return self.primary_model
+
+    def get_candidates(self) -> list[str]:
+        """Returns candidate model IDs in priority order for the current in-flight request."""
+        self._check_auto_reset()
+        idx = self._current_index
+        return self.cascade[idx:] + self.cascade[:idx]
+
+    def record_failure(self, failed_model: str, exc: Exception) -> str:
+        """Advances active model to the next one in the cascade upon error and records demote timestamp."""
+        sanitized_err = _sanitize(str(exc))
+        err_type = type(exc).__name__
+
+        if failed_model in self.cascade:
+            idx = self.cascade.index(failed_model)
+            next_idx = (idx + 1) % len(self.cascade)
+            self._current_index = next_idx
+            self._last_demote_time = time.monotonic()
+            next_model = self.cascade[next_idx]
+            logger.warning(
+                "LLM model '{}' encountered {} ({}). Auto-shifting active model to next in cascade: '{}'. Auto-reshift to '{}' scheduled in {:.0f}m.",
+                failed_model,
+                err_type,
+                sanitized_err,
+                next_model,
+                self.primary_model,
+                self.reset_cooldown_seconds / 60,
+            )
+            return next_model
+        return self.get_active_model()
+
+    def record_success(self, model: str) -> None:
+        """Logs successful generation with model."""
+        logger.debug("LLM model '{}' generation succeeded.", model)
+
+    def reset_to_primary(self) -> None:
+        """Resets active model back to primary top model."""
+        self._current_index = 0
+        self._last_demote_time = None
+        logger.info("Manually reset active model to primary: '{}'", self.primary_model)
+
+
+# Global cascade manager instance
+cascade_manager = ModelCascadeManager(
+    primary_model=DEFAULT_NVIDIA_MODEL,
+    cascade_models=NVIDIA_CASCADE_MODELS,
+    reset_cooldown_seconds=float(LLM_RESET_COOLDOWN_SECONDS),
+)
+
+
+def _nvidia_model() -> str:
+    if LLM_MODEL and LLM_MODEL not in _INVALID_NVIDIA_MODEL_OVERRIDES:
+        return LLM_MODEL
+    if LLM_MODEL in _INVALID_NVIDIA_MODEL_OVERRIDES:
+        logger.warning(
+            "Ignoring invalid NVIDIA model override '{}' and using '{}'",
+            LLM_MODEL,
+            cascade_manager.get_active_model(),
+        )
+    return cascade_manager.get_active_model()
+
+
 def resolve_llm_config() -> Tuple[str, str, str, str]:
     """
     Resolves the (provider, base_url, api_key, model_name) to use based on configuration
     and available API keys.
-
-    Priority:
-    1. Explicit custom LLM_BASE_URL + LLM_API_KEY
-    2. Explicit LLM_PROVIDER environment variable
-    3. Auto-detection: NVIDIA → OpenRouter → Groq
     """
     # 1. Custom explicit configuration
     if LLM_BASE_URL and LLM_API_KEY:
@@ -115,7 +209,6 @@ def resolve_llm_config() -> Tuple[str, str, str, str]:
 
     # 3. Auto-detection priority:
     # NVIDIA → OpenRouter → Groq
-    # NVIDIA is preferred: aligns with the configured Laguna model and lower latency.
     if NVIDIA_API_KEY:
         return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, _nvidia_model()
     if OPENROUTER_API_KEY:
@@ -123,7 +216,6 @@ def resolve_llm_config() -> Tuple[str, str, str, str]:
     if GROQ_API_KEY:
         return "groq", "https://api.groq.com/openai/v1", GROQ_API_KEY, LLM_MODEL or GROQ_MODEL
 
-    # Default fallback to NVIDIA model (even without key, will raise auth later)
     return "nvidia", "https://integrate.api.nvidia.com/v1", "", _nvidia_model()
 
 
@@ -143,7 +235,7 @@ try:
     _raw_temp = float(LLM_TEMPERATURE)
     TEMPERATURE = max(0.0, min(2.0, _raw_temp))
 except (TypeError, ValueError):
-    TEMPERATURE = 2.0
+    TEMPERATURE = 0.7
 
 
 def _classify_openai_exception(exc: Exception) -> Exception:
@@ -209,14 +301,12 @@ def _build_openai_messages(history: list[dict], customer_context: Optional[str] 
 
         msg_dict: dict[str, Any] = {"role": role}
 
-        # For assistant messages with tool calls, content can be None
         if role == "assistant" and "tool_calls" in item and not content_str:
             msg_dict["content"] = None
         else:
             msg_dict["content"] = content_str
 
         if "tool_calls" in item:
-            # Ensure tool_calls are serialized dicts
             raw_calls = item["tool_calls"]
             msg_dict["tool_calls"] = [
                 tc.model_dump() if hasattr(tc, "model_dump") else tc
@@ -257,31 +347,35 @@ def _format_tools(tools: list[dict]) -> list[dict]:
     return formatted
 
 
-async def ask_llm(
-    history: list[dict],
-    customer_context: Optional[str] = None,
-    max_tool_iterations: int = MAX_TOOL_ITERATIONS,
-):
-    """Sends conversation history to OpenAI-compatible Chat Completions API with automatic tool execution.
+def _clean_output_text(raw_text: str | None, msg: Any = None) -> str:
+    """Extracts and sanitizes assistant text, stripping <think> tags and pulling reasoning if needed."""
+    text = raw_text or ""
+    if not text and msg is not None:
+        reasoning = getattr(msg, "reasoning_content", None)
+        if reasoning:
+            text = str(reasoning)
 
-    LLM-level errors (rate limit, auth, connection) are raised as typed exceptions
-    (LLMRateLimitError, LLMAuthenticationError, LLMServiceUnavailableError, LLMError)
-    so callers can produce specific customer-facing messages.
+    if text:
+        # Strip <think>...</think> chain-of-thought blocks so user receives clean answer
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    return text
 
-    Tool execution errors are NOT raised — they are serialised as structured error
-    payloads in the tool-result message so the LLM can decide how to respond
-    (retry with different args, fall back to another tool, or explain to the customer).
-    """
-    tools = registry.get_llm_declarations()
-    messages = _build_openai_messages(history, customer_context=customer_context)
 
+async def _execute_turn_with_model(
+    model_name: str,
+    base_messages: list[dict],
+    tools: list[dict],
+    max_tool_iterations: int,
+) -> Any:
+    """Executes a full turn (including tool calling loop) using a specific model."""
     import json as _json
 
+    messages = [dict(m) for m in base_messages]
     response = None
 
     for iteration in range(max_tool_iterations):
         kwargs: dict = {
-            "model": MODEL_NAME,
+            "model": model_name,
             "messages": messages,
             "max_tokens": MAX_OUTPUT_TOKENS,
             "temperature": TEMPERATURE,
@@ -290,65 +384,47 @@ async def ask_llm(
             kwargs["tools"] = _format_tools(tools)
             kwargs["tool_choice"] = "auto"
 
-        try:
-            response = await client.chat.completions.create(**kwargs)
-        except RateLimitError as exc:
-            logger.warning("LLM rate limited on iteration {}: {}", iteration, _sanitize(str(exc)))
-            raise _classify_openai_exception(exc)
-        except APIStatusError as exc:
-            status = getattr(exc, "status_code", None)
-            logger.error(
-                "LLM API status error {} on iteration {} model={}: {}",
-                status,
-                iteration,
-                MODEL_NAME,
-                _sanitize(str(exc)),
-            )
-            raise _classify_openai_exception(exc)
-        except APIConnectionError as exc:
-            logger.error("LLM connection error on iteration {}: {}", iteration, _sanitize(str(exc)))
-            raise _classify_openai_exception(exc)
-        except APIError as exc:
-            logger.error("LLM API error on iteration {}: {}", iteration, _sanitize(str(exc)))
-            raise _classify_openai_exception(exc)
-        except Exception as exc:
-            logger.exception("Unexpected error calling LLM on iteration {}", iteration)
-            raise _classify_openai_exception(exc)
+        response = await client.chat.completions.create(**kwargs)
 
         choices = getattr(response, "choices", None) or []
         if not choices:
-            setattr(response, "output_text", "")
-            return response
+            raise LLMError(f"Model '{model_name}' returned empty choices list.")
 
         first_choice = choices[0]
         msg = getattr(first_choice, "message", None)
         finish_reason = getattr(first_choice, "finish_reason", None)
 
-        output_text = getattr(msg, "content", None) or ""
+        raw_output_text = getattr(msg, "content", None) or ""
+        output_text = _clean_output_text(raw_output_text, msg)
         setattr(response, "output_text", output_text)
 
         tool_calls = getattr(msg, "tool_calls", None) or []
 
         if not tool_calls:
+            # If no tools called and output_text is empty, raise to trigger next cascade model
+            if not output_text and finish_reason != "tool_calls":
+                raise LLMError(f"Model '{model_name}' returned empty content with finish_reason={finish_reason}")
+
             logger.success(
-                "LLM completion succeeded | iteration={} model={} finish_reason={} output_len={}",
+                "LLM completion succeeded | model={} iteration={} finish_reason={} output_len={}",
+                model_name,
                 iteration,
-                MODEL_NAME,
                 finish_reason,
                 len(output_text),
             )
             return response
 
         logger.info(
-            "LLM requested {} tool call(s) on iteration {} | finish_reason={}",
+            "LLM requested {} tool call(s) on iteration {} | model={} finish_reason={}",
             len(tool_calls),
             iteration,
+            model_name,
             finish_reason,
         )
 
         assistant_msg = {
             "role": "assistant",
-            "content": output_text or None,
+            "content": raw_output_text or None,
             "tool_calls": [
                 tc.model_dump() if hasattr(tc, "model_dump") else tc
                 for tc in tool_calls
@@ -374,11 +450,6 @@ async def ask_llm(
                 tool_output_item = await registry.execute(call_id, name, args)
                 logger.success("Tool '{}' [call_id={}] completed during iteration {}", name, call_id, iteration)
             except Exception as exc:
-                # Do NOT propagate tool errors — serialise them as a structured
-                # error tool-result so the LLM can reason about the failure and
-                # decide whether to retry, use a fallback tool, or explain to the
-                # customer.  Crashing the loop here would give the customer a
-                # generic error message with no actionable context.
                 error_detail = _sanitize(str(exc).strip() or repr(exc))
                 logger.error(
                     "Tool '{}' [call_id={}] raised during iteration {}: {}",
@@ -407,7 +478,66 @@ async def ask_llm(
     return response
 
 
+async def ask_llm(
+    history: list[dict],
+    customer_context: Optional[str] = None,
+    max_tool_iterations: int = MAX_TOOL_ITERATIONS,
+):
+    """Sends conversation history to OpenAI-compatible Chat Completions API with automatic tool execution,
+    in-flight model cascading failover, and automatic 1-hour cooldown reset back to primary (Kimi K3).
+
+    If an active model encounters any error (rate limit 429, 5xx, timeout, or auth error),
+    the system automatically and seamlessly fails over to the next capable model in the cascade
+    to answer the user's message without asking them to re-type.
+    """
+    tools = registry.get_llm_declarations()
+    messages = _build_openai_messages(history, customer_context=customer_context)
+
+    # In explicit custom or non-nvidia modes with fixed override, use single model
+    if LLM_BASE_URL and LLM_API_KEY:
+        candidate_models = [LLM_MODEL or "gpt-4o-mini"]
+    elif LLM_PROVIDER and LLM_PROVIDER.lower() in ("groq", "openrouter"):
+        candidate_models = [MODEL_NAME]
+    else:
+        candidate_models = cascade_manager.get_candidates()
+
+    last_exc: Optional[Exception] = None
+
+    for attempt_idx, model_name in enumerate(candidate_models):
+        logger.info(
+            "Attempting LLM completion with model '{}' (candidate {}/{})",
+            model_name,
+            attempt_idx + 1,
+            len(candidate_models),
+        )
+        try:
+            response = await _execute_turn_with_model(
+                model_name=model_name,
+                base_messages=messages,
+                tools=tools,
+                max_tool_iterations=max_tool_iterations,
+            )
+            cascade_manager.record_success(model_name)
+            return response
+        except (RateLimitError, APIStatusError, APIConnectionError, APIError, Exception) as exc:
+            last_exc = exc
+            logger.warning(
+                "Model '{}' failed during execution: {}. Failing over to next candidate in cascade...",
+                model_name,
+                _sanitize(str(exc)),
+            )
+            cascade_manager.record_failure(model_name, exc)
+            continue
+
+    # If all models in the cascade failed
+    if last_exc:
+        logger.error("All candidate models in cascade exhausted. Final error: {}", _sanitize(str(last_exc)))
+        raise _classify_openai_exception(last_exc)
+
+    raise LLMError("LLM failed to return a response from any model in cascade.")
+
+
 # ---------------------------------------------------------------------------
-# Backwards-compatibility alias — remove once all call-sites are updated.
+# Backwards-compatibility alias
 # ---------------------------------------------------------------------------
 ask_gpt = ask_llm

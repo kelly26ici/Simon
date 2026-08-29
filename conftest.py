@@ -1,4 +1,4 @@
-# conftest.py — pytest configuration for the Samantha project.
+# conftest.py — pytest configuration for the Simon project.
 #
 # Without this file pytest would treat the project root as just a package
 # directory and fail with `ModuleNotFoundError: No module named 'src'`
