@@ -23,7 +23,7 @@ FILE_LOG_FORMAT = (
 
 def configure_logging(
     level: str | None = None,
-    log_file: str | None = "logs/samantha.log",
+    log_file: str | None = "logs/simon.log",
 ) -> None:
     """
     Configures Loguru logging with explicit color schemes:

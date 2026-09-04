@@ -1,314 +1,272 @@
-# External Website Integration — What the Partner Needs to Do
+# Connect Your Website to Simon's Property Database & Simon Agent
 
-This document is the **complete, relayable instruction set** for an external
-website owner (e.g. Damantha) to connect their website to **Simon / Samantha**
-and embed the Samantha chat assistant. Your (Simon's) backend is already set
-up — everything below is what the partner does on **their** end.
+Hi! This guide is for **you** — the owner of an external website who wants to:
+
+1. Push property listings from your site into my (Simon's) database.
+2. Let your visitors search the shared pool of my listings.
+3. Embed **Simon agent** as a chat bubble on your site.
+
+I'm the **developer** who built Simon agent. Below is a three-part plan: what **you** do, what **I** do, and what's still **remaining**.
+
+> **Note for vibe coders:** If you build websites with lovable.ai, just copy the instructions in the blue quotes below and paste them straight into a lovable.ai chat. lovable.ai can build everything for you — no manual coding needed.
 
 ---
 
-## 0. Your base API URL
+## 1. What You Should Do
 
-All endpoints are served from your Simon deployment:
+### 1a. Credentials I'll give you
+
+Before you can connect, I'll share these values with you privately (never post them publicly):
+
+| What you need it for | Value I'll give you | Placeholder in this doc | Where you use it |
+|---|---|---|---|
+| Submit properties to my database | `PROPERTY_ADMIN_USER` / `PROPERTY_ADMIN_PASSWORD` | `[PROPERTY_ADMIN_USER]` / `[PROPERTY_ADMIN_PASSWORD]` | HTTP Basic auth header in your backend |
+| Let visitors chat with Simon agent | `SAMANTHA_WEB_API_KEY` | `[SAMANTHA_WEB_API_KEY]` | `X-API-Key` header in chat requests |
+
+**My API base URL** (confirming it's live):
 
 ```
 https://samantha-nrev.onrender.com
 ```
 
+> ⚠️ Your admin credentials must **never** appear in browser JavaScript. Property submission must go through your own backend (a server-side route). Search and the chat widget are safe to call directly from the browser.
+
 ---
 
-## 1. Credentials the partner needs from you (Simon)
+### 1b. Tell lovable.ai: build a backend endpoint that sends properties to me
 
-Share these **privately** (never commit them to her frontend code):
+You need a **backend route on your site** (e.g. `POST /api/submit-property`) that forwards form data to my database. The admin credentials stay in your backend — not in the browser.
 
-| What she needs | Your env var | How she uses it |
+**Tell lovable.ai:**
+
+> "Create a backend API route at `/api/submit-property` on my website. It should accept a POST request with JSON matching this shape, then proxy the request to `https://samantha-nrev.onrender.com/api/properties/` using HTTP Basic auth with username `[PROPERTY_ADMIN_USER]` and password `[PROPERTY_ADMIN_PASSWORD]`. Return the response back to the caller."
+
+Your form must collect **these required fields** (the submit will fail if any are missing):
+
+| Field | Type | Rules |
 |---|---|---|
-| Property-submit username / password | `PROPERTY_ADMIN_USER` + `PROPERTY_ADMIN_PASSWORD` | HTTP Basic auth for `POST /api/properties/` |
-| Chat-widget key (recommended) | `SAMANTHA_WEB_API_KEY` | Sent as the `X-API-Key` header to `POST /api/chat/` |
+| `title` | text | at least 3 characters |
+| `description` | text | at least 10 characters |
+| `property_type` | dropdown | must be exactly one of: `house`, `apartment`, `land`, `commercial`, `townhouse`, `villa`, `cottage`, `penthouse`, `studio` |
+| `listing_type` | dropdown | must be exactly: `sale` or `rent` |
+| `price` | number | must be greater than 0 |
+| `location` | text | neighborhood or area, e.g. "Kilimani" |
 
-> ⚠️ Her property-submission calls **must go through her own backend** so the
-> Basic credentials never appear in browser JavaScript. Her chat widget and
-> search calls can be browser-side (CORS is open by default; in production you
-> restrict it via `CORS_ALLOWED_ORIGINS`).
+**Optional fields** (collect whatever is useful for your site):
 
----
-
-## 2. Push properties from her site to your database
-
-**Endpoint:**
-```
-POST https://samantha-nrev.onrender.com/api/properties/
-```
-
-**Her backend** sends each property as JSON with HTTP Basic auth:
-```
-Authorization: Basic base64(YOUR_USER:YOUR_PASS)
-Content-Type: application/json
-```
-
-### Field mapping (her form → your schema `CreatePropertySchema`)
-
-**Required** (she must collect these):
-- `title` (string) — listing title
-- `description` (string, ≥10 chars)
-- `property_type` — **exactly one of:** `house`, `apartment`, `land`, `commercial`, `townhouse`, `villa`, `cottage`, `penthouse`, `studio`
-- `listing_type` — `sale` or `rent`
-- `price` (number, > 0)
-- `location` (string) — neighborhood/area, e.g. `"Kilimani"`
-
-**Optional** (map as she collects them):
-- `city` (default `Nairobi`), `county`
-- `bedrooms`, `bathrooms`, `square_meters`, `lot_size_sqm`, `year_built`, `floor_number`, `total_floors`
-- `currency` (default `KES`)
-- `amenities` (list, e.g. `["garden","parking","security"]`)
-- `furnished` (bool), `parking_spots` (int)
-- `has_garden`, `has_swimming_pool`, `pet_friendly`, `gated_community` (bools)
-- `images` (list of image URLs), `video_url`, `virtual_tour_url`
-- `agent_name`, `agent_phone`, `agent_email`
-- `source` — she can set `"source": "damantha.com"` to track where the listing came from
-
-### Example request (her backend)
-
-```bash
-curl -X POST "https://samantha-nrev.onrender.com/api/properties/" \
-  -u "PROPERTY_ADMIN_USER:PROPERTY_ADMIN_PASSWORD" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "4-Bedroom Townhouse in Kilimani",
-    "description": "Spacious family townhouse with garden and parking in a secure complex.",
-    "property_type": "townhouse",
-    "listing_type": "sale",
-    "price": 28000000,
-    "bedrooms": 4,
-    "bathrooms": 3,
-    "square_meters": 320,
-    "location": "Kilimani",
-    "city": "Nairobi",
-    "county": "Nairobi",
-    "amenities": ["garden", "parking", "security"],
-    "furnished": false,
-    "parking_spots": 2,
-    "has_garden": true,
-    "images": ["https://her-site.com/img/1.jpg", "https://her-site.com/img/2.jpg"],
-    "agent_name": "Damantha Real Estate",
-    "agent_phone": "0701454854",
-    "agent_email": "info@damantha.com",
-    "source": "damantha.com"
-  }'
-```
-
-### What happens automatically (her responsibility: nothing)
-- The listing is **upserted into Supabase** (your PostgreSQL database). Resubmitting
-  the same `title + location + price + listing_type + property_type` updates the
-  existing row — no duplicates.
-- The property is **instantly indexed into Qdrant**, so it appears in both
-  structured and natural-language (semantic) searches by every customer immediately.
-
-### Response
-```
-201 Created
-{ "id": "<uuid>", "status": "created", "title": "4-Bedroom Townhouse in Kilimani" }
-```
-
-### From her website (backend proxy pattern)
-
-```js
-// Example: her backend endpoint that forwards to your Simon API
-app.post('/my-api/submit-property', async (req, res) => {
-  const resp = await fetch('https://samantha-nrev.onrender.com/api/properties/', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Basic ' + Buffer.from('PROPERTY_ADMIN_USER:PROPERTY_ADMIN_PASSWORD').toString('base64'),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(req.body),
-  });
-  const data = await resp.json();
-  res.status(resp.status).json(data);
-});
-```
-
-Then her frontend `<form>` POSTs to `/my-api/submit-property` (her own backend),
-which keeps the credentials secret.
-
----
-
-## 3. Let her customers search your shared database pool
-
-**Endpoint:**
-```
-GET https://samantha-nrev.onrender.com/api/properties/
-```
-**No auth needed** — her frontend calls it directly (CORS is open).
-
-### Full list of query parameters she can wire to her search UI
-
-| Parameter | Type | Description |
+| Field | Type | Notes |
 |---|---|---|
-| `location` | text | Fuzzy match on neighborhood/area |
-| `city` | text | City name (e.g. `Nairobi`, `Mombasa`) |
+| `city` | text | defaults to "Nairobi" if omitted |
+| `county` | text | — |
+| `bedrooms` | number | — |
+| `bathrooms` | number | — |
+| `square_meters` | number | — |
+| `amenities` | list | e.g. `["parking", "garden", "security"]` |
+| `furnished` | toggle | true/false |
+| `parking_spots` | number | — |
+| `has_garden` | toggle | true/false |
+| `has_swimming_pool` | toggle | true/false |
+| `pet_friendly` | toggle | true/false |
+| `gated_community` | toggle | true/false |
+| `images` | list | list of image URLs already uploaded |
+| `video_url` | text | link to a video tour |
+| `virtual_tour_url` | text | link to a virtual tour |
+| `agent_name` | text | your listing agent name |
+| `agent_phone` | text | your contact phone |
+| `agent_email` | text | your contact email |
+| `source` | text | e.g. "yourdomain.com" — so I know where the listing came from |
+
+**Tell lovable.ai:**
+
+> "Update my property submission form so that when a user fills it out and clicks submit, the form sends the data to my own `/api/submit-property` backend route (not directly to Simon's API)."
+
+**What happens after you submit:** I'll upsert your listing into my PostgreSQL database and immediately index it into my search system. Resubmitting the same listing (matching title + location + price + type + listing_type) just updates it — no duplicates.
+
+**Success response:**
+
+```json
+{ "id": "<uuid>", "status": "created", "title": "Your listing title" }
+```
+
+---
+
+### 1c. Tell lovable.ai: build a search page that calls my public search
+
+This is **browser-side only** — no credentials needed. My API allows all origins by default during testing.
+
+**Tell lovable.ai:**
+
+> "Create a search results page on my website. When a visitor selects filters (location, price range, bedrooms, etc.), make a GET request to `https://samantha-nrev.onrender.com/api/properties/` passing the filters as URL query parameters. Display the returned results (title, price, thumbnail image, bedrooms, location) in a grid or list."
+
+**Available search filters** you can tell lovable.ai to wire up:
+
+| Filter | Type | Example |
+|---|---|---|
+| `location` | text | `Kilimani`, `Westlands` |
+| `city` | text | `Nairobi`, `Mombasa` |
 | `property_type` | enum | `house`, `apartment`, `land`, `commercial`, `townhouse`, `villa`, `cottage`, `penthouse`, `studio` |
-| `listing_type` | enum | `sale` or `rent` |
-| `min_price` | number | Minimum price in KES |
-| `max_price` | number | Maximum price in KES |
-| `bedrooms` | int | Exact bedroom count |
-| `min_bedrooms` | int | Minimum bedrooms |
-| `min_sqm` | number | Minimum square meters |
-| `max_sqm` | number | Maximum square meters |
-| `amenities` | list | Property must have all of these |
-| `furnished` | bool | Filter by furnished status |
-| `pet_friendly` | bool | Filter by pet-friendly status |
-| `gated_community` | bool | Filter by gated community status |
+| `listing_type` | enum | `sale`, `rent` |
+| `min_price` | number | `10000000` |
+| `max_price` | number | `50000000` |
+| `bedrooms` | integer | `3` |
+| `min_bedrooms` | integer | `2` |
+| `min_sqm` | number | `150` |
+| `max_sqm` | number | `400` |
+| `pet_friendly` | boolean | `true` / `false` |
+| `gated_community` | boolean | `true` / `false` |
 | `sort_by` | enum | `price`, `bedrooms`, `square_meters`, `created_at` |
-| `sort_order` | enum | `asc` or `desc` |
-| `limit` | int (1–200) | Results per page |
-| `offset` | int | Pagination offset |
+| `sort_order` | enum | `asc`, `desc` |
+| `limit` | integer (1–200) | `20` |
+| `offset` | integer | `0`, `40` (for pagination) |
 
-### Example (browser JavaScript)
+**Example result shape** (what lovable.ai receives to render):
 
-```js
-const params = new URLSearchParams({
-  location: 'Kilimani',
-  listing_type: 'sale',
-  min_price: '10000000',
-  max_price: '50000000',
-  bedrooms: '3',
-  sort_by: 'price',
-  sort_order: 'asc',
-  limit: '20',
-  offset: '0',
-});
-
-const res = await fetch(
-  'https://samantha-nrev.onrender.com/api/properties/?' + params
-);
-const { total, results } = await res.json();
-// results[i] = { id, title, price, currency, bedrooms, bathrooms,
-//                  property_type, listing_type, location, city, amenities, image }
-```
-
-### Single property detail (browser)
-
-```js
-const res = await fetch(
-  'https://samantha-nrev.onrender.com/api/properties/' + propertyId
-);
-const detail = await res.json(); // full description, images, agent contact, etc.
-```
-
-### Quick count for stats
-
-```
-GET https://samantha-nrev.onrender.com/api/properties/total?location=Kilimani&listing_type=sale
-→ { "count": N }
-```
-
----
-
-## 4. Embed Samantha as a chat bubble / sidebar
-
-Samantha is a full AI real-estate agent. A visitor on her site can ask her to
-search properties, compare listings, view photos, schedule viewings, save
-preferences, and even be handed off to you (Simon). She reuses your existing
-LLM + tool pipeline — just delivered as JSON instead of via WhatsApp.
-
-### Option A — Drop-in widget (recommended)
-
-She adds **two script tags** to her site (in `<head>` or before `</body>`):
-
-```html
-<!-- 1. Configure (place BEFORE the widget script) -->
-<script>
-  window.SimonChatConfig = {
-    apiBase: "https://samantha-nrev.onrender.com",   // your Simon URL
-    apiKey: "SAMANTHA_WEB_API_KEY-value-here",         // from you (omit if you left the key unset)
-    title: "Samantha",                                  // optional — chat header
-    brandColor: "#0d6efd",                              // optional — match her brand
-    position: "right",                                  // "left" or "right" (default: right)
-    welcomeMessage: "Hi! I'm Samantha, your Kenya real-estate assistant 👋"
-  };
-</script>
-
-<!-- 2. Load the widget (single script tag) -->
-<script src="https://samantha-nrev.onrender.com/static/chat-widget.js"></script>
-```
-
-**What the widget does automatically:**
-- Injects a floating chat button in the bottom corner.
-- On click, opens a chat panel (sidebar-style).
-- Generates and persists a **session id** in the visitor's `localStorage`
-  (so the conversation continues across page reloads).
-- Sends each message to `POST /api/chat/` with `{ session_id, message }`
-  and the `X-API-Key` header, then renders Samantha's reply.
-- Shows a "Samantha is typing…" indicator while waiting.
-
-It's dependency-free and works on any modern browser.
-
-### Option B — Build her own chat UI
-
-If she wants full control of the look & feel, she calls the API directly:
-
-```
-POST https://samantha-nrev.onrender.com/api/chat/
-Headers: Content-Type: application/json, X-API-Key: <the key>
-Body: {
-  "session_id": "web-<any-visitor-id>",   // generated/persisted by her
-  "message": "3 bedroom house in Karen"
+```json
+{
+  "total": 24,
+  "limit": 20,
+  "offset": 0,
+  "results": [
+    {
+      "id": "<uuid>",
+      "title": "4-Bedroom Townhouse in Kilimani",
+      "price": 28000000,
+      "currency": "KES",
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "property_type": "townhouse",
+      "listing_type": "sale",
+      "location": "Kilimani",
+      "city": "Nairobi",
+      "images": ["https://..."],
+      "agent_name": "Damantha Real Estate"
+    }
+  ]
 }
 ```
 
+You can also show a single property's full details (including description, all photos, agent contact info, etc.):
+
+```
+GET https://samantha-nrev.onrender.com/api/properties/{property-id}
+```
+
+---
+
+### 1d. Tell lovable.ai: paste two script tags to embed Simon agent as a chat bubble
+
+Add this to your site's HTML — put the first block in your `<head>` (or just before `</body>`), and the second block after it.
+
+```html
+<!-- 1. Configuration (must come BEFORE the script tag below) -->
+<script>
+  window.SimonChatConfig = {
+    apiBase: "https://samantha-nrev.onrender.com",
+    apiKey: "[SAMANTHA_WEB_API_KEY]",          // I'll give you this value
+    title: "Simon agent",                       // optional — chat header text
+    brandColor: "#0d6efd",                      // optional — match your brand color
+    position: "right",                           // "left" or "right" (default: right)
+    welcomeMessage: "Hi! I'm Simon agent — your Kenya real-estate assistant 👋"
+  };
+</script>
+
+<!-- 2. Load the chat widget (single script tag) -->
+<script src="https://samantha-nrev.onrender.com/static/chat-widget.js"></script>
+```
+
+> 🔑 Remember to replace `[SAMANTHA_WEB_API_KEY]` with the actual value I give you.
+
+That's it — a floating chat button appears in the corner of your page. Visitors click it to open Simon agent and can ask questions like "3-bedroom house for rent in Westlands under 150k" or "show me properties with a garden."
+
+**What the widget does automatically:**
+- Generates and saves a session ID in the visitor's browser (`localStorage`) — conversations continue across page reloads.
+- Sends each message to `POST /api/chat/` with the `X-API-Key` header.
+- Shows a "Simon agent is typing…" indicator while waiting.
+- Is fully self-contained — no npm packages, no dependencies.
+
+If you'd rather build your own chat UI instead of using the widget, the chat endpoint is:
+
+```
+POST https://samantha-nrev.onrender.com/api/chat/
+Headers: Content-Type: application/json, X-API-Key: [SAMANTHA_WEB_API_KEY]
+Body: { "session_id": "web-visitor-123", "message": "3 bedroom house in Karen" }
+```
+
 **Response:**
+
 ```json
 {
-  "reply": "Samantha's text response here. She can search your property pool live.",
-  "session_id": "web-<id-to-reuse-on-next-call>",
+  "reply": "Simon agent's text response here.",
+  "session_id": "web-visitor-123",
   "source": "web"
 }
 ```
 
-She reuses the returned `session_id` on every subsequent call from the same
-visitor so the conversation stays contextual.
+Reuse the returned `session_id` on every subsequent message so the conversation stays contextual.
 
-#### Response shape explained
-| Field | Meaning |
+---
+
+## 2. What I (the developer) Should Do
+
+These are my tasks on the Simon backend side:
+
+1. **Set the property admin credentials.**
+   I need to set `PROPERTY_ADMIN_USER` and `PROPERTY_ADMIN_PASSWORD` in my `.env` file. The code currently defaults to `admin` / `changeme` — I must replace these with strong, unique values and share them with you.
+   → Current placeholder: `[PROPERTY_ADMIN_USER]`, `[PROPERTY_ADMIN_PASSWORD]`
+
+2. **Set the Simon agent web API key.**
+   I need to set `SAMANTHA_WEB_API_KEY` in my `.env`. Without it the chat endpoint is open to anyone; with it, every chat request must include the matching `X-API-Key` header.
+   → Current placeholder: `[SAMANTHA_WEB_API_KEY]`
+
+3. **Deploy and confirm the API is live.**
+   My backend is already configured with `RENDER_BASE_URL=https://samantha-nrev.onrender.com` in my `.env`. I need to confirm the deployment is running and all endpoints respond.
+
+4. **Serve the chat widget.**
+   Done — the widget is already mounted as a static file at `/static/chat-widget.js` via FastAPI in `src/main.py`. No action needed once deployed.
+
+5. **(Production, after you give me your domain)** Restrict CORS.
+   I'll set `CORS_ALLOWED_ORIGINS=https://your-domain.com` in my `.env` so only your site can call my APIs from a browser. Right now it defaults to `*` (all origins — fine for testing, not for production).
+
+6. **Monitor and support.**
+   I'll keep an eye on Simon agent's logs for any integration errors and help you debug if something doesn't work.
+
+---
+
+## 3. What's Remaining
+
+| # | Item | Who owns it | Status |
+|---|---|---|---|
+| 1 | `PROPERTY_ADMIN_USER` — not set in `.env` (code defaults to `admin`) | I | ⚠️ Must set to a strong value |
+| 2 | `PROPERTY_ADMIN_PASSWORD` — not set in `.env` (code defaults to `changeme`) | I | ⚠️ Must set to a strong value |
+| 3 | `SAMANTHA_WEB_API_KEY` — not set in `.env` (code defaults to empty = open access) | I | ⚠️ Must set for production |
+| 4 | `CORS_ALLOWED_ORIGINS` — not set (defaults to `*` = all origins) | I | ⚠️ Must restrict to your domain |
+| 5 | Your website's domain name | You | ❓ I need this from you to configure CORS |
+| 6 | Your property form fields → mapping to my API payload | You | ❓ Confirm which fields your form collects |
+
+---
+
+## Checklist for You
+
+- [ ] Receive `[PROPERTY_ADMIN_USER]` / `[PROPERTY_ADMIN_PASSWORD]` from I.
+- [ ] Tell lovable.ai to build your `/api/submit-property` backend route → `POST https://samantha-nrev.onrender.com/api/properties/` with Basic auth using the credentials from I.
+- [ ] Tell lovable.ai to build your search page → `GET https://samantha-nrev.onrender.com/api/properties/?<filters>`.
+- [ ] Receive `[SAMANTHA_WEB_API_KEY]` from I.
+- [ ] Paste the two `<script>` tags on your site to embed Simon agent.
+- [ ] Give I your domain name (e.g. `https://your-site.com`) so I can configure CORS for production.
+- [ ] (Production) Confirm with I that `CORS_ALLOWED_ORIGINS` is set to your domain.
+
+---
+
+## Troubleshooting
+
+| Problem | What to do |
 |---|---|
-| `reply` | Samantha's text answer (may include property search results from your DB) |
-| `session_id` | The session id to send back next time |
-| `source` | Always `"web"` for the widget channel |
+| `401 Unauthorized` when submitting a property | The admin credentials are wrong — ask I to confirm `[PROPERTY_ADMIN_USER]` / `[PROPERTY_ADMIN_PASSWORD]`. |
+| Property not appearing in search | Wait a few seconds for indexing, or confirm your `POST` returned `{"id": ...}` with HTTP 201. |
+| `401` on the chat widget | The `apiKey` in `SimonChatConfig` doesn't match — ask I to confirm `[SAMANTHA_WEB_API_KEY]`. |
+| Chat bubble doesn't appear | Make sure `apiBase` is set in `window.SimonChatConfig` and the `<script src=...>` tag loads **after** it. Check your browser's developer console for errors. |
+| Chat returns `503` | Simon agent's AI backend is temporarily unavailable — try again in a minute. |
 
 ---
 
-## 5. Production hardening (your job, Simon — tell her to ask for this)
-
-- **Restrict CORS** to her domain: set `CORS_ALLOWED_ORIGINS=https://damantha.com`
-  in your environment (instead of the default `*`).
-- **Never expose** `PROPERTY_ADMIN_PASSWORD` or `SUPABASE_KEY` to the browser.
-- When `SAMANTHA_WEB_API_KEY` is set, every chat request **must** include the
-  matching `X-API-Key` header (the widget handles this automatically).
-
----
-
-## 6. Checklist for the partner (Damantha)
-
-- [ ] Receive `PROPERTY_ADMIN_USER` + `PROPERTY_ADMIN_PASSWORD` from Simon.
-- [ ] Wire her property form → her backend → `POST https://samantha-nrev.onrender.com/api/properties/`.
-- [ ] Wire her search UI → `GET https://samantha-nrev.onrender.com/api/properties/` (browser, no auth).
-- [ ] Receive `SAMANTHA_WEB_API_KEY` from Simon.
-- [ ] Add the two `<script>` tags (Option A) — or build her own UI with Option B.
-- [ ] (Production) Ask Simon to set `CORS_ALLOWED_ORIGINS` to her domain.
-
----
-
-## 7. Troubleshooting
-
-| Symptom | Likely cause / fix |
-|---|---|
-| `401 Unauthorized` on `POST /api/properties/` | Wrong/missing Basic auth credentials. Confirm user & password with Simon. |
-| Property not appearing in search | Wait a moment for Qdrant indexing, or confirm the `POST` returned `201` with an `id`. |
-| `401` on `POST /api/chat/` | Missing or wrong `X-API-Key`. If the widget is used, ensure `apiKey` is set in `SimonChatConfig`. |
-| Widget not showing on the page | Ensure `apiBase` is set in `window.SimonChatConfig` and the script tag loads after it. Check browser console for errors. |
-| Chat returns `503` | Simon's LLM backend is temporarily unavailable; retry in a minute. |
-
----
-
-For Simon's internal technical reference see [`INTEGRATION.md`](./INTEGRATION.md).
+> 📄 For Simon's internal technical reference (endpoint specs, schemas, deployment notes), see [`INTEGRATION.md`](./INTEGRATION.md).

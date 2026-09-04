@@ -27,7 +27,7 @@ async def telegram_webhook_health():
     simon_id = await get_simon_chat_id()
     return {
         "status": "active",
-        "service": "Samantha Telegram Webhook",
+        "service": "Simon agent Telegram Webhook",
         "simon_chat_id_configured": bool(simon_id),
     }
 
@@ -80,14 +80,14 @@ async def telegram_webhook_receive(request: Request, background_tasks: Backgroun
         welcome_msg = (
             f"👋 *Hello {first_name}!*\n\n"
             f"✅ Your Telegram Chat ID (`{chat_id}`) has been successfully connected to "
-            f"*Samantha (Realtors Round Tables)*.\n\n"
+            f"*Simon agent (Realtors Round Tables)*.\n\n"
             f"You will now receive:\n"
             f"• 🏠 *Instant Lead Alerts* (ready-to-buy/rent clients)\n"
             f"• 📅 *Scheduled Viewing Appointments*\n"
             f"• 📝 *Live Real Estate Conversation Summaries*\n"
             f"• 👤 *Direct Human Escalations*\n\n"
-            f"Whenever Samantha finishes a customer negotiation or qualifies a hot lead, "
-            f"she will send full details directly to this chat."
+            f"Whenever Simon agent finishes a customer negotiation or qualifies a hot lead, "
+            f"it will send full details directly to this chat."
         )
         background_tasks.add_task(send_telegram_message, welcome_msg, chat_id=chat_id)
         return {"ok": True, "action": "owner_registered", "chat_id": chat_id}
@@ -96,7 +96,7 @@ async def telegram_webhook_receive(request: Request, background_tasks: Backgroun
     if clean_cmd.startswith(("/status", ".status")):
         active_owner_id = await get_simon_chat_id()
         status_msg = (
-            f"📊 *Samantha System Status*\n\n"
+            f"📊 *Simon agent System Status*\n\n"
             f"• *Status:* Online & Operational ✅\n"
             f"• *Active Owner Chat ID:* `{active_owner_id or 'None'}`\n"
             f"• *This Chat ID:* `{chat_id}`\n"
@@ -128,7 +128,7 @@ async def telegram_webhook_receive(request: Request, background_tasks: Backgroun
     # 4. Help command
     if clean_cmd.startswith(("/help", ".help")):
         help_msg = (
-            f"🤖 *Samantha Owner Bot Commands*\n\n"
+            f"🤖 *Simon agent Owner Bot Commands*\n\n"
             f"• `/start` or `.start` — Link this Telegram account to receive leads\n"
             f"• `/status` — View system and connection status\n"
             f"• `/summary <phone>` — Fetch latest conversation summary for a client\n"

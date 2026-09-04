@@ -40,7 +40,7 @@ app.include_router(properties_router)
 app.include_router(chat_router)
 app.include_router(mpesa_router)
 
-# Serve the embeddable Samantha chat widget as a static asset so an external
+# Serve the embeddable Simon agent chat widget as a static asset so an external
 # website owner can drop a single <script> tag onto their page.
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 

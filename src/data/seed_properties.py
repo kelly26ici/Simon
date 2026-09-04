@@ -1,6 +1,6 @@
 # src/data/seed_properties.py
 """
-Realistic, verified Kenya/Nairobi real estate dataset for Samantha.
+Realistic, verified Kenya/Nairobi real estate dataset for Simon agent.
 Contains prime listings across Westlands, Kilimani, Karen, Lavington, Runda,
 Kileleshwa, Riverside, Ruaka, Kiambu Road, and Coastal Kenya (Diani/Nyali).
 """
@@ -40,8 +40,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Faith Wanjiku",
         "agent_phone": "+254 712 345 678",
-        "agent_email": "faith@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "faith@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Rhapta Heights Luxury 3-Bedroom Penthouse in Westlands",
@@ -76,8 +76,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Kevin Mutua",
         "agent_phone": "+254 722 890 123",
-        "agent_email": "kevin@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "kevin@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "One West Park Modern 2-Bedroom Apartment in Westlands",
@@ -111,8 +111,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Faith Wanjiku",
         "agent_phone": "+254 712 345 678",
-        "agent_email": "faith@samantharealestate.co.ke",
-        "source": "Samantha MLS"
+        "agent_email": "faith@simonrealestate.co.ke",
+        "source": "Simon MLS"
     },
     {
         "title": "Parklands View Serviced Studio Apartment in Westlands",
@@ -146,8 +146,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Faith Wanjiku",
         "agent_phone": "+254 712 345 678",
-        "agent_email": "faith@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "faith@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
 
     # ── Kilimani ──────────────────────────────────────────────────────────────
@@ -184,8 +184,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "David Ochieng",
         "agent_phone": "+254 733 456 789",
-        "agent_email": "david@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "david@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Denis Pritt Executive 2-Bedroom Apartment in Kilimani",
@@ -219,8 +219,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "David Ochieng",
         "agent_phone": "+254 733 456 789",
-        "agent_email": "david@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "david@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Kindaruma Road Modern 3-Bedroom Apartment in Kilimani",
@@ -254,8 +254,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "David Ochieng",
         "agent_phone": "+254 733 456 789",
-        "agent_email": "david@samantharealestate.co.ke",
-        "source": "Samantha MLS"
+        "agent_email": "david@simonrealestate.co.ke",
+        "source": "Simon MLS"
     },
     {
         "title": "Wood Avenue Luxury 4-Bedroom Duplex Penthouse in Kilimani",
@@ -289,8 +289,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Kevin Mutua",
         "agent_phone": "+254 722 890 123",
-        "agent_email": "kevin@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "kevin@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
 
     # ── Kileleshwa ────────────────────────────────────────────────────────────
@@ -326,8 +326,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "David Ochieng",
         "agent_phone": "+254 733 456 789",
-        "agent_email": "david@samantharealestate.co.ke",
-        "source": "Samantha MLS"
+        "agent_email": "david@simonrealestate.co.ke",
+        "source": "Simon MLS"
     },
     {
         "title": "Mandera Road Contemporary 2-Bedroom Apartment in Kileleshwa",
@@ -361,8 +361,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "David Ochieng",
         "agent_phone": "+254 733 456 789",
-        "agent_email": "david@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "david@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
 
     # ── Karen ─────────────────────────────────────────────────────────────────
@@ -401,8 +401,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Grace Nyambura",
         "agent_phone": "+254 720 112 233",
-        "agent_email": "grace@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "grace@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Mbagathi Ridge 4-Bedroom Country Cottage in Karen",
@@ -437,8 +437,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Grace Nyambura",
         "agent_phone": "+254 720 112 233",
-        "agent_email": "grace@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "grace@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Karen Plains 0.5-Acre Prime Residential Plot in Karen",
@@ -468,8 +468,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Grace Nyambura",
         "agent_phone": "+254 720 112 233",
-        "agent_email": "grace@samantharealestate.co.ke",
-        "source": "Samantha MLS"
+        "agent_email": "grace@simonrealestate.co.ke",
+        "source": "Simon MLS"
     },
 
     # ── Lavington ─────────────────────────────────────────────────────────────
@@ -506,8 +506,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Kevin Mutua",
         "agent_phone": "+254 722 890 123",
-        "agent_email": "kevin@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "kevin@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Convent Drive 5-Bedroom Luxury Townhouse in Lavington",
@@ -542,8 +542,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Kevin Mutua",
         "agent_phone": "+254 722 890 123",
-        "agent_email": "kevin@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "kevin@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
 
     # ── Runda & Muthaiga ──────────────────────────────────────────────────────
@@ -581,8 +581,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Grace Nyambura",
         "agent_phone": "+254 720 112 233",
-        "agent_email": "grace@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "grace@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Old Muthaiga 6-Bedroom Classic Ambassadorial Mansion",
@@ -617,8 +617,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Grace Nyambura",
         "agent_phone": "+254 720 112 233",
-        "agent_email": "grace@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "grace@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
 
     # ── Riverside & Spring Valley ─────────────────────────────────────────────
@@ -654,8 +654,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Faith Wanjiku",
         "agent_phone": "+254 712 345 678",
-        "agent_email": "faith@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "faith@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Spring Valley 4-Bedroom Gated Villa with Garden",
@@ -690,8 +690,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Faith Wanjiku",
         "agent_phone": "+254 712 345 678",
-        "agent_email": "faith@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "faith@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
 
     # ── Ruaka & Kiambu Road ───────────────────────────────────────────────────
@@ -727,8 +727,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "David Ochieng",
         "agent_phone": "+254 733 456 789",
-        "agent_email": "david@samantharealestate.co.ke",
-        "source": "Samantha MLS"
+        "agent_email": "david@simonrealestate.co.ke",
+        "source": "Simon MLS"
     },
     {
         "title": "Edenville Estate 4-Bedroom Gated Townhouse on Kiambu Road",
@@ -763,8 +763,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "David Ochieng",
         "agent_phone": "+254 733 456 789",
-        "agent_email": "david@samantharealestate.co.ke",
-        "source": "Samantha MLS"
+        "agent_email": "david@simonrealestate.co.ke",
+        "source": "Simon MLS"
     },
 
     # ── Coastal Kenya ─────────────────────────────────────────────────────────
@@ -801,8 +801,8 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Kevin Mutua",
         "agent_phone": "+254 722 890 123",
-        "agent_email": "kevin@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "kevin@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     },
     {
         "title": "Nyali Executive 3-Bedroom Ocean View Apartment in Mombasa",
@@ -836,7 +836,7 @@ PROPERTIES_SEED_DATA = [
         ],
         "agent_name": "Kevin Mutua",
         "agent_phone": "+254 722 890 123",
-        "agent_email": "kevin@samantharealestate.co.ke",
-        "source": "Samantha Direct Exclusives"
+        "agent_email": "kevin@simonrealestate.co.ke",
+        "source": "Simon Direct Exclusives"
     }
 ]

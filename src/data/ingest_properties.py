@@ -1,7 +1,7 @@
 """
 src/data/ingest_properties.py
 
-Production data ingestion and enrichment pipeline for Samantha Real Estate.
+Production data ingestion and enrichment pipeline for Simon agent Real Estate.
 Processes thousands of real scraped property listings from BuyRentKenya, Jiji,
 and dedicated Kangundo Road / Nairobi metropolitan datasets.
 """
@@ -83,12 +83,12 @@ IMAGE_POOLS = {
 }
 
 AGENTS = [
-    {"name": "Faith Wanjiku", "phone": "+254 712 345 678", "email": "faith@samantharealestate.co.ke"},
-    {"name": "Kevin Mutua", "phone": "+254 722 890 123", "email": "kevin@samantharealestate.co.ke"},
-    {"name": "Grace Nyambura", "phone": "+254 733 456 789", "email": "grace@samantharealestate.co.ke"},
-    {"name": "David Mwangi", "phone": "+254 701 234 567", "email": "david@samantharealestate.co.ke"},
-    {"name": "Esther Mwende", "phone": "+254 799 112 233", "email": "esther@samantharealestate.co.ke"},
-    {"name": "Brian Ochieng", "phone": "+254 720 987 654", "email": "brian@samantharealestate.co.ke"},
+    {"name": "Faith Wanjiku", "phone": "+254 712 345 678", "email": "faith@simonrealestate.co.ke"},
+    {"name": "Kevin Mutua", "phone": "+254 722 890 123", "email": "kevin@simonrealestate.co.ke"},
+    {"name": "Grace Nyambura", "phone": "+254 733 456 789", "email": "grace@simonrealestate.co.ke"},
+    {"name": "David Mwangi", "phone": "+254 701 234 567", "email": "david@simonrealestate.co.ke"},
+    {"name": "Esther Mwende", "phone": "+254 799 112 233", "email": "esther@simonrealestate.co.ke"},
+    {"name": "Brian Ochieng", "phone": "+254 720 987 654", "email": "brian@simonrealestate.co.ke"},
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -475,7 +475,7 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "agent_name": agent["name"],
                 "agent_phone": agent["phone"],
                 "agent_email": agent["email"],
-                "source": "Samantha Kangundo Exclusives",
+                "source": "Simon Kangundo Exclusives",
             })
 
         # 2. Houses / Bungalows for sale in this spot
@@ -519,7 +519,7 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "agent_name": agent["name"],
                 "agent_phone": agent["phone"],
                 "agent_email": agent["email"],
-                "source": "Samantha Kangundo Exclusives",
+                "source": "Simon Kangundo Exclusives",
             })
 
         # 3. Rentals in this spot (Utawala, Ruai, Kamulu, Joska, Tala, Komarock, etc.)
@@ -563,7 +563,7 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "agent_name": agent["name"],
                 "agent_phone": agent["phone"],
                 "agent_email": agent["email"],
-                "source": "Samantha Kangundo Exclusives",
+                "source": "Simon Kangundo Exclusives",
             })
 
     logger.info("Generated {} dedicated Kangundo Road properties.", len(properties))

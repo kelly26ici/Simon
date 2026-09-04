@@ -1,11 +1,15 @@
-# Website Integration Guide
+# Website Integration Guide (Simon's Internal Reference)
+
+> 👋 This is Simon's internal technical reference. For the step-by-step guide that
+> an external website owner follows (written for vibe coders who use lovable.ai),
+> see [`EXTERNAL_WEBSITE_INTEGRATION.md`](./EXTERNAL_WEBSITE_INTEGRATION.md).
 
 This guide explains what an external website owner (e.g. **Damantha**) needs to do
-to connect their website to **Simon / Samantha** so that:
+to connect their website to **Simon agent** so that:
 
 1. Properties added on their site are saved into **Simon's** database.
 2. Their customers can **search** the same shared pool of Simon's databases.
-3. Visitors on their site can talk to **Samantha** embedded as a **sidebar / chat bubble**.
+3. Visitors on their site can talk to **Simon agent** embedded as a **sidebar / chat bubble**.
 
 ---
 
@@ -20,7 +24,7 @@ Simon is a FastAPI application. The base URL is your deployment, e.g.
 | Search available properties (shared pool) | `GET` | `/api/properties/` | none (public) |
 | Get one property's full detail | `GET` | `/api/properties/{id}` | none (public) |
 | Count matching properties | `GET` | `/api/properties/total` | none (public) |
-| Chat with Samantha (web widget) | `POST` | `/api/chat/` | `X-API-Key` header (if `SAMANTHA_WEB_API_KEY` is set) |
+| Chat with Simon agent (web widget) | `POST` | `/api/chat/` | `X-API-Key` header (if `SAMANTHA_WEB_API_KEY` is set) |
 | Chat widget JS asset | `GET` | `/static/chat-widget.js` | none |
 
 CORS is already enabled on the API. By default it allows **all origins**; you can
@@ -181,11 +185,11 @@ const detail = await res.json(); // full description, images, agent contact, etc
 
 ---
 
-## 3 — Embedding Samantha as a chat bubble / sidebar
+## 3 — Embedding Simon agent as a chat bubble / sidebar
 
-Samantha is a full AI real-estate agent: she can search properties, show
+Simon agent is a full AI real-estate agent: it can search properties, show
 details, compare listings, schedule viewings, remember your preferences, and
-even contact Simon (the owner) when you're ready. You can embed her as a
+even contact Simon (the owner) when you're ready. You can embed it as a
 chat widget with **one script tag**.
 
 ### Option A — Drop-in widget (recommended)
@@ -198,10 +202,10 @@ Paste this on any page where you want the chat bubble to appear:
   window.SimonChatConfig = {
     apiBase: "https://samantha-nrev.onrender.com",
     apiKey: "YOUR-SAMANTHA-WEB-API-KEY",   // provided by Simon (omit if unset)
-    title: "Samantha",                     // optional
+    title: "Simon agent",                     // optional
     brandColor: "#0d6efd",                 // optional — matches your brand
     position: "right",                     // "left" or "right"
-    welcomeMessage: "Hi! I'm Samantha — your Kenya real-estate assistant 👋"
+    welcomeMessage: "Hi! I'm Simon agent — your Kenya real-estate assistant 👋"
   };
 </script>
 
@@ -215,7 +219,7 @@ open the chat panel. The widget:
 - Generates and persists a **session id** in the visitor's `localStorage` (so the
   conversation continues across page reloads).
 - Sends each message to `POST /api/chat/` with `{ session_id, message }`.
-- Renders Samantha's reply (which may include tool-driven searches of your
+- Renders Simon agent's reply (which may include tool-driven searches of your
   shared property pool).
 - Is dependency-free and self-contained.
 
@@ -236,13 +240,13 @@ const res = await fetch('https://samantha-nrev.onrender.com/api/chat/', {
   }),
 });
 const data = await res.json();
-// data.reply  -> Samantha's text response
+// data.reply  -> Simon agent's text response
 // data.session_id -> the session id to reuse on the next call
 ```
 
-### What visitors can do with Samantha
+### What visitors can do with Simon agent
 
-Because Samantha has the full tool registry, a web visitor can:
+Because Simon agent has the full tool registry, a web visitor can:
 
 - Search your shared property pool (`search_properties` / `semantic_search_properties`)
 - See full property details, photos, agent contacts

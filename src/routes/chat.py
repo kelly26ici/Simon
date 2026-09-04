@@ -1,8 +1,8 @@
-"""Web Chat API route for Samantha.
+"""Web Chat API route for Simon agent.
 
-Exposes Samantha (the same AI real-estate agent that powers the WhatsApp
+Exposes Simon agent (the same AI real-estate agent that powers the WhatsApp
 experience) over a simple HTTP endpoint so that external websites can embed
-Samantha as a sidebar / chat bubble.
+Simon agent as a sidebar / chat bubble.
 
 This route reuses the full existing conversation pipeline:
   - Redis-backed per-session history (src.messages.chats.conversation)
@@ -62,7 +62,7 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Samantha's reply, returned as JSON for the browser widget."""
+    """Simon agent's reply, returned as JSON for the browser widget."""
 
     reply: str
     session_id: str
@@ -96,7 +96,7 @@ async def web_chat(
     payload: ChatRequest,
     _: bool = Depends(_require_api_key),
 ):
-    """Relay a visitor message to Samantha and return her reply as JSON.
+    """Relay a visitor message to Simon agent and return its reply as JSON.
 
     The conversation is persisted exactly as the WhatsApp path persists it
     (Redis history + Supabase ``conversation_messages``), so a visitor who
@@ -131,7 +131,7 @@ async def web_chat(
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         logger.exception("Unexpected LLM error for web session {}: {}", session_id, exc)
-        raise HTTPException(status_code=500, detail="Samantha is temporarily unavailable.")
+        raise HTTPException(status_code=500, detail="Simon agent is temporarily unavailable.")
 
     reply_text = getattr(reply, "output_text", "") or ""
     if not reply_text:

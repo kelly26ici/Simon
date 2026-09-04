@@ -409,7 +409,7 @@ async def handle_audio(sender: str, raw: Optional[dict]) -> None:
   # Phase 7: feed through the same pipeline as a normal text message.
   # Explanation: Passing the original WhatsApp message id in the payload
   # preserves dedup and audit-logging that the text pipeline already
-  # implements — no new reasoning path needed in Samantha's agent.
+  # implements — no new reasoning path needed in Simon agent.
   text_payload: dict = {
    "text": {"body": transcript},
    "id": raw.get("id"),
