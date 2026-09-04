@@ -1,10 +1,11 @@
 """
 Agent-facing property search tools registered with the shared ToolRegistry.
 
-Exposes three tools:
+Exposes four tools:
     - search_properties          → structured filter-based search (Supabase)
     - semantic_search_properties → natural language search (Qdrant + embeddings)
     - compare_properties        → side-by-side comparison of 2-4 properties
+    - create_property            → create or update a property listing (Supabase + Qdrant)
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ from src.tools.properties.schemas import (
     SemanticSearchSchema,
     GetPropertyDetailsSchema,
     ComparePropertiesSchema,
+    CreatePropertySchema,
 )
-from src.tools.properties import semantic_search
+from src.tools.properties import semantic_search, index_property
 from src.services.db import db
 
 
@@ -411,4 +413,51 @@ async def compare_properties(payload: ComparePropertiesSchema) -> Dict[str, Any]
             "common_amenities": list(common_amenities) if common_amenities else [],
             "unique_amenities": unique_amenities,
         },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Tool 5: Create / Update Property
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@registry.register("create_property", CreatePropertySchema)
+async def create_property(payload: CreatePropertySchema) -> Dict[str, Any]:
+    """
+    Create or update a property listing in the database. The listing is then
+    immediately indexed in Qdrant so it appears in both structured and
+    semantic searches.
+
+    Use this tool when a customer or agent provides property details that should
+    be added to the live listings — e.g. a new home for sale, a rental
+    available for rent, or updating an existing listing's price/amenities.
+
+    Returns the new property's UUID and a success confirmation.
+    """
+    prop_data = payload.model_dump(exclude_none=True)
+    logger.info("Creating property | title='{}' type={} listing={}", prop_data.get("title"), prop_data.get("property_type"), prop_data.get("listing_type"))
+
+    result = await db.upsert_property(prop_data)
+    if not result:
+        logger.error("Failed to create property '{}' in Supabase", prop_data.get("title"))
+        return {
+            "error": "Failed to create property. The database may be unavailable.",
+            "hint": "Ask the customer to try again later or contact support.",
+        }
+
+    prop_id = str(result.get("id"))
+
+    # Real-time Qdrant indexing so the property appears in semantic search
+    try:
+        indexed = await index_property(prop_id)
+        if not indexed:
+            logger.warning("Property {} created in DB but Qdrant indexing failed", prop_id)
+    except Exception as exc:
+        logger.warning("Qdrant indexing error for property {}: {}", prop_id, exc)
+
+    logger.success("Property created and indexed | id={} title='{}'", prop_id, prop_data.get("title"))
+    return {
+        "status": "success",
+        "property_id": prop_id,
+        "title": prop_data.get("title"),
+        "message": f"Property '{prop_data.get('title')}' has been created and is now searchable.",
     }

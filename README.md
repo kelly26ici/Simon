@@ -179,6 +179,7 @@ All tools are imported for side-effect registration in [`src/tools/__init__.py`]
 | `semantic_search_properties` | Natural-language search using Cloudflare embeddings and Qdrant, with optional structured filters |
 | `get_property_details` | Retrieves a full listing, images/media, agent details, and customer-service contacts |
 | `compare_properties` | Compares two to four property IDs and calculates value, price per square meter, size, family fit, common amenities, unique amenities, and missing IDs |
+| `create_property` | Creates or updates a property listing in Supabase and immediately indexes it in Qdrant for semantic search |
 
 Supported property types include `house`, `apartment`, `land`, `commercial`, `townhouse`, `villa`, `cottage`, `penthouse`, and `studio`. Supported listing types are `sale` and `rent`.
 
@@ -400,6 +401,11 @@ The application entrypoint is `src.main:app`.
 | `POST` | `/mpesa/callback/{secret}` | Daraja STK callback |
 | `POST` | `/mpesa/c2b/validation/{secret}` | Daraja C2B validation |
 | `POST` | `/mpesa/c2b/confirmation/{secret}` | Daraja C2B confirmation |
+| `GET` | `/api/properties/` | Search/list available properties with filters and pagination |
+| `GET` | `/api/properties/{id}` | Retrieve full details for a single property |
+| `POST` | `/api/properties/` | Create or update a property listing (requires HTTP Basic auth) |
+| `DELETE` | `/api/properties/{id}` | Delete a property from Supabase and Qdrant (requires HTTP Basic auth) |
+| `GET` | `/api/properties/total` | Count of matching available properties |
 
 ---
 
@@ -447,7 +453,8 @@ The application entrypoint is `src.main:app`.
 │   │   └── webhook.py               # Event-processing pipeline
 │   ├── routes/
 │   │   ├── telegram.py              # Telegram owner routes
-│   │   └── webhook.py               # WhatsApp routes
+│   │   ├── webhook.py               # WhatsApp routes
+│   │   └── properties.py            # Property CRUD REST API routes
 │   ├── services/
 │   │   ├── db.py                    # Supabase data access
 │   │   ├── llm.py                   # Chat Completions integration
@@ -680,6 +687,9 @@ Configure either a custom endpoint or one of the automatically detected provider
 | `SAMANTHA_API_KEY_ID` | Compatibility/application setting |
 | `SAMANTHA_CLUSTER_ENDPOINT` | Compatibility/application setting |
 | `SAMANTHA_CLUSTER_ID` | Compatibility/application setting |
+| `PROPERTY_ADMIN_USER` | Username for property write API endpoints (default `admin`) |
+| `PROPERTY_ADMIN_PASSWORD` | Password for property write API endpoints (default `changeme` — change in production) |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins for cross-origin requests from external websites (default `*` — restrict in production) |
 
 ### M-Pesa and database migration settings
 

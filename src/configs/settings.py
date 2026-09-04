@@ -137,6 +137,15 @@ TAVILY_API_KEY=os.getenv("TAVILY_API_KEY")
 RENDER_BASE_URL=os.getenv("RENDER_BASE_URL", "https://samantha-nrev.onrender.com")
 
 #======================================================
+#                    WEB CHAT (external website widget)
+#======================================================
+# Optional API key that the embeddable chat widget sends as X-API-Key.
+# When set, POST /api/chat requires a matching key — protects the LLM from
+# abuse by arbitrary third-party sites. Share this value with website owners
+# you onboard (e.g. Damantha). Leave unset only for local development.
+SAMANTHA_WEB_API_KEY = os.getenv("SAMANTHA_WEB_API_KEY", "")
+
+#======================================================
 #                    TELEGRAM
 #======================================================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")

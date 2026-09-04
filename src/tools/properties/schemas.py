@@ -197,6 +197,38 @@ class GetPropertyDetailsSchema(BaseModel):
     )
 
 
+# ── Tool 5: Create / Update Property ─────────────────────────────────────────
+
+class CreatePropertySchema(BaseModel):
+    """Input for the create_property tool — create or update a property listing."""
+
+    title: str = Field(..., min_length=3, description="Property listing title")
+    description: str = Field(..., min_length=10, description="Full property description")
+    property_type: PropertyType = Field(..., description="Type of property")
+    listing_type: ListingType = Field(..., description="Sale or rent")
+    price: float = Field(..., gt=0, description="Listing price in KES (must be positive)")
+    bedrooms: Optional[int] = Field(default=None, ge=0, description="Number of bedrooms")
+    bathrooms: Optional[int] = Field(default=None, ge=0, description="Number of bathrooms")
+    square_meters: Optional[float] = Field(default=None, gt=0, description="Floor area in sqm")
+    location: str = Field(..., min_length=2, description="Neighborhood or area (e.g. 'Kilimani')")
+    city: str = Field(default="Nairobi", description="City name")
+    county: Optional[str] = Field(default=None, description="County name")
+    amenities: Optional[List[str]] = Field(default=None, description="List of amenities")
+    furnished: Optional[bool] = Field(default=False, description="Whether the property is furnished")
+    parking_spots: Optional[int] = Field(default=0, ge=0, description="Number of parking spots")
+    has_garden: Optional[bool] = Field(default=False, description="Whether the property has a garden")
+    has_swimming_pool: Optional[bool] = Field(default=False, description="Whether the property has a swimming pool")
+    pet_friendly: Optional[bool] = Field(default=False, description="Whether pets are allowed")
+    gated_community: Optional[bool] = Field(default=False, description="Whether it's in a gated community")
+    images: Optional[List[str]] = Field(default=None, description="List of image URLs")
+    video_url: Optional[str] = Field(default=None, description="Video tour URL")
+    virtual_tour_url: Optional[str] = Field(default=None, description="Virtual tour URL")
+    agent_name: Optional[str] = Field(default=None, description="Listing agent name")
+    agent_phone: Optional[str] = Field(default=None, description="Listing agent phone")
+    agent_email: Optional[str] = Field(default=None, description="Listing agent email")
+    source: Optional[str] = Field(default=None, description="Where the listing came from")
+
+
 # ── Tool 4: Property Comparison ──────────────────────────────────────────────
 
 class ComparePropertiesSchema(BaseModel):

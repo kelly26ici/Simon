@@ -42,6 +42,7 @@ async def test_tool_registry_contains_real_estate_tools():
     assert "save_customer_fact" in names
     assert "get_customer_preferences" in names
     assert "get_support_contact" in names
+    assert "create_property" in names
 
 
 @pytest.mark.asyncio

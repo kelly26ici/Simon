@@ -538,7 +538,7 @@ class DatabaseClient:
             return []
 
     async def delete_property(self, property_id: str) -> bool:
-        """Delete a property by UUID."""
+        """Delete a property by UUID from both Supabase and the Qdrant vector index."""
         if not self.client:
             return False
 
@@ -547,7 +547,15 @@ class DatabaseClient:
             return True
 
         try:
-            return await self._run_sync(_delete)
+            result = await self._run_sync(_delete)
+            # Also remove from the Qdrant vector index so deleted properties
+            # don't appear in semantic search results.
+            try:
+                from src.tools.properties import delete_property_index
+                await delete_property_index(property_id)
+            except Exception as idx_exc:
+                logger.warning("Failed to delete property {} from Qdrant: {}", property_id, idx_exc)
+            return result
         except Exception as exc:
             logger.exception("Failed to delete property {}: {}", property_id, exc)
             return False

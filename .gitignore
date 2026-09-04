@@ -125,3 +125,4 @@ all_python_code.txt
 # AI agent state — not application code
 .claude/
 .serena/
+.poolside/
