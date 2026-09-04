@@ -33,6 +33,11 @@ else:
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# Poolside AI — OpenAI-compatible inference API for Poolside's Laguna models.
+# Base URL: https://inference.poolside.ai/v1 (Poolside-hosted inference)
+POOLSIDE_API_KEY = os.getenv("POOLSIDE_API_KEY", "")
+POOLSIDE_BASE_URL = os.getenv("POOLSIDE_BASE_URL", "https://inference.poolside.ai/v1")
+
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")

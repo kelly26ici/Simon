@@ -7,36 +7,58 @@ OPENROUTER_MODEL = "openai/gpt-4o-mini"
 DEFAULT_NVIDIA_MODEL = "moonshotai/kimi-k3"
 NVIDIA_MODEL = DEFAULT_NVIDIA_MODEL
 
-# Ordered cascade of capable models for auto-shifting and failover,
-# strictly ranked from strongest/highest-reasoning to next (Quality & Benchmark first):
-# 1. Kimi K3 (2.8T MoE, ~1500 Elo, 88% MMLU-Pro, 93.5% GPQA Diamond)
-# 2. MiniMax M3 (428B MoE, 84-87% MMLU-Pro, 92% GPQA Diamond, 1M context)
-# 3. Nemotron 3 Super (120B MoE, 83.7% MMLU-Pro, 79.2% GPQA)
-# 4. Llama 3.2 90B Vision (90B dense, 88.5% MMLU)
-# 5. Nemotron 3 Nano Omni Reasoning (30B with chain-of-thought & tool calling)
-# 6. Muse Glimmer (30B agentic instruct)
-# 7. Nemotron 3.5 Lightning (30B)
-# 8. Diffusion Gemma (26B)
-# 9. GPT-OSS 20B (20B)
-# 10. Llama 3.2 11B Vision (11B)
-# 11. Laguna XS 2.1
-# 12. Nemotron 3 Nano (30B)
-NVIDIA_CASCADE_MODELS = [
-    "moonshotai/kimi-k3",
-    "minimaxai/minimax-m3",
-    "nvidia/nemotron-3-super-120b-a12b",
-    "meta/llama-3.2-90b-vision-instruct",
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-    "meta/muse-glimmer-30b",
-    "nvidia/nemotron-3.5-lightning-30b-a3b",
-    "google/diffusiongemma-26b-a4b-it",
+# Poolside AI — OpenAI-compatible inference API at https://inference.poolside.ai/v1
+# Model ID format: poolside/<model-name>
+# Ordered fastest → slowest (by active parameter count).
+DEFAULT_POOLSIDE_MODEL = "poolside/laguna-xs-2.1"
+
+# ---------------------------------------------------------------------------
+# Poolside cascade — used when LLM_PROVIDER=poolside (or auto-detected via
+# POOLSIDE_API_KEY).  Poolside models first (fastest→slowest), then the rest
+# of the capable models (also fastest→slowest).  Minimax M3 has been removed.
+# ---------------------------------------------------------------------------
+# Poolside models (fastest → slowest by active params):
+#   XS 2.1  — 33B total / 3B active MoE, 256K ctx  (lightest, fastest)
+#   S 2.1   — 118B total / 8B active MoE, 1M ctx   (large, reasoning-focused)
+#   M.1     — 225B total / 23B active MoE, 256K ctx (highest quality, slowest)
+POOLSIDE_CASCADE_MODELS = [
+    # --- Poolside (fastest → slowest) ---
+    "poolside/laguna-xs-2.1",       # 33B-A3B MoE, 256K ctx
+    "poolside/laguna-s-2.1",        # 118B-A8B MoE, 1M ctx
+    "poolside/laguna-m.1",          # 225B-A23B MoE, 256K ctx
+    # --- Rest (fastest → slowest, minimiami/m3 excluded) ---
     "openai/gpt-oss-20b",
     "meta/llama-3.2-11b-vision-instruct",
-    "poolside/laguna-xs-2.1",
+    "google/diffusiongemma-26b-a4b-it",
     "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "meta/muse-glimmer-30b",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "meta/llama-3.2-90b-vision-instruct",
+    "moonshotai/kimi-k3",
 ]
 
-# Time in seconds before an active failover model automatically resets back to moonshotai/kimi-k3 (1 hour).
+# ---------------------------------------------------------------------------
+# NVIDIA cascade (fastest → slowest, minimiami/m3 removed).
+# Used when LLM_PROVIDER=nvidia (or auto-detected via NVIDIA_API_KEY).
+# ---------------------------------------------------------------------------
+NVIDIA_CASCADE_MODELS = [
+    "openai/gpt-oss-20b",                       # 20B dense
+    "meta/llama-3.2-11b-vision-instruct",       # 11B dense
+    "google/diffusiongemma-26b-a4b-it",         # 26B-A4B MoE
+    "poolside/laguna-xs-2.1",                   # 33B-A3B MoE — fastest poolside model (also on NVIDIA NIM)
+    "nvidia/nemotron-3-nano-30b-a3b",           # 30B-A3B MoE
+    "nvidia/nemotron-3.5-lightning-30b-a3b",    # 30B-A3B MoE
+    "meta/muse-glimmer-30b",                    # 33B dense
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",  # 30B-A3B MoE with CoT
+    "nvidia/nemotron-3-super-120b-a12b",        # 120B-A12B MoE
+    "meta/llama-3.2-90b-vision-instruct",       # 90B dense
+    "moonshotai/kimi-k3",                       # 2.8T MoE (strongest, slowest)
+]
+
+# Time in seconds before an active failover model automatically resets back to
+# the primary model (1 hour).
 MODEL_RESET_COOLDOWN_SECONDS = 3600
 
 GEMINI_MODEL = "gemini-2.5-flash"

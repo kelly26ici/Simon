@@ -5,6 +5,7 @@ from src.configs.constants import (
     GROQ_FALLBACK_MODEL,
     OPENROUTER_MODEL,
     NVIDIA_MODEL,
+    DEFAULT_POOLSIDE_MODEL,
     GEMINI_MODEL,
 )
 
@@ -36,3 +37,12 @@ def test_groq_model_has_no_surrounding_whitespace():
 def test_nvidia_model_no_provider_prefix():
     """NVIDIA model ID must NOT carry the nvidia_nim/ routing prefix."""
     assert not NVIDIA_MODEL.startswith("nvidia_nim/")
+
+
+def test_poolside_default_model_is_string():
+    assert isinstance(DEFAULT_POOLSIDE_MODEL, str) and len(DEFAULT_POOLSIDE_MODEL) > 0
+
+
+def test_poolside_default_model_starts_with_poolside_prefix():
+    """Poolside model IDs must use the poolside/ provider prefix."""
+    assert DEFAULT_POOLSIDE_MODEL.startswith("poolside/")

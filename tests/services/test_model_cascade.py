@@ -12,8 +12,11 @@ from src.services.llm import (
     _clean_output_text,
     LLMRateLimitError,
     LLMError,
+    resolve_llm_config,
 )
 from src.configs.constants import DEFAULT_NVIDIA_MODEL, NVIDIA_CASCADE_MODELS
+from src.configs.constants import DEFAULT_POOLSIDE_MODEL, POOLSIDE_CASCADE_MODELS
+from src.configs import settings as s
 
 
 def test_cascade_manager_initialization():
@@ -142,3 +145,94 @@ async def test_ask_llm_all_models_fail_raises():
          patch("src.services.llm.cascade_manager", mock_manager):
         with pytest.raises(LLMRateLimitError):
             await ask_llm(history=[{"role": "user", "content": "Hello"}])
+
+
+# ---------------------------------------------------------------------------
+# Poolside AI cascade and provider tests
+# ---------------------------------------------------------------------------
+
+
+def test_poolside_default_model_is_laguna_xs():
+    """The primary poolside model should be the fastest (XS 2.1)."""
+    assert DEFAULT_POOLSIDE_MODEL == "poolside/laguna-xs-2.1"
+
+
+def test_poolside_cascade_starts_with_poolside_models():
+    """First entries in the poolside cascade must be poolside models."""
+    poolside_entries = [m for m in POOLSIDE_CASCADE_MODELS if m.startswith("poolside/")]
+    assert len(poolside_entries) >= 3
+    # The first entry must be a poolside model
+    assert POOLSIDE_CASCADE_MODELS[0].startswith("poolside/")
+
+
+def test_poolside_cascade_poolside_before_others():
+    """All poolside models must appear before any non-poolside model in the cascade."""
+    first_non_poolside = next(
+        (i for i, m in enumerate(POOLSIDE_CASCADE_MODELS) if not m.startswith("poolside/")),
+        len(POOLSIDE_CASCADE_MODELS),
+    )
+    poolside_indices = [i for i, m in enumerate(POOLSIDE_CASCADE_MODELS) if m.startswith("poolside/")]
+    assert all(idx < first_non_poolside for idx in poolside_indices)
+
+
+def test_poolside_cascade_fastest_first():
+    """Poolide models in the cascade must be ordered fastest → slowest.
+
+    XS 2.1 (33B/3B) → S 2.1 (118B/8B) → M.1 (225B/23B)
+    """
+    poolside_models = [m for m in POOLSIDE_CASCADE_MODELS if m.startswith("poolside/")]
+    xs_idx = poolside_models.index("poolside/laguna-xs-2.1")
+    s_idx = poolside_models.index("poolside/laguna-s-2.1")
+    m_idx = poolside_models.index("poolside/laguna-m.1")
+    assert xs_idx < s_idx < m_idx
+
+
+def test_no_minimax_m3_in_poolside_cascade():
+    """minimaxai/minimax-m3 must NOT appear in the poolside cascade."""
+    assert "minimaxai/minimax-m3" not in POOLSIDE_CASCADE_MODELS
+
+
+def test_no_minimax_m3_in_nvidia_cascade():
+    """minimaxai/minimax-m3 must NOT appear in the NVIDIA cascade."""
+    assert "minimaxai/minimax-m3" not in NVIDIA_CASCADE_MODELS
+
+
+def test_poolside_cascade_manager_uses_poolside_models():
+    """The poolside cascade manager's candidates start with poolside models."""
+    from src.services.llm import poolside_cascade_manager
+    candidates = poolside_cascade_manager.get_candidates()
+    assert candidates[0] == DEFAULT_POOLSIDE_MODEL
+    assert candidates[0].startswith("poolside/")
+
+
+def test_poolside_cascade_manager_primary():
+    """The poolside cascade manager's primary model is Laguna XS 2.1."""
+    from src.services.llm import poolside_cascade_manager
+    assert poolside_cascade_manager.primary_model == DEFAULT_POOLSIDE_MODEL
+
+
+def test_resolve_llm_config_poolside_provider():
+    """When POOLSIDE_API_KEY is set and no other key, poolside should be selected."""
+    with patch("src.services.llm.POOLSIDE_API_KEY", "sky_test"), \
+         patch("src.services.llm.NVIDIA_API_KEY", None), \
+         patch("src.services.llm.OPENROUTER_API_KEY", None), \
+         patch("src.services.llm.GROQ_API_KEY", None), \
+         patch("src.services.llm.LLM_BASE_URL", ""), \
+         patch("src.services.llm.LLM_API_KEY", ""), \
+         patch("src.services.llm.LLM_PROVIDER", ""):
+        provider, base_url, api_key, model = resolve_llm_config()
+        assert provider == "poolside"
+        assert base_url == s.POOLSIDE_BASE_URL
+        assert api_key == "sky_test"
+
+
+def test_resolve_llm_config_poolside_explicit_provider():
+    """When LLM_PROVIDER=poolside and key is set, poolside is selected."""
+    with patch("src.services.llm.POOLSIDE_API_KEY", "sky_test"), \
+         patch("src.services.llm.LLM_PROVIDER", "poolside"), \
+         patch("src.services.llm.LLM_BASE_URL", ""), \
+         patch("src.services.llm.LLM_API_KEY", ""):
+        provider, base_url, api_key, model = resolve_llm_config()
+        assert provider == "poolside"
+        assert base_url == s.POOLSIDE_BASE_URL
+        assert api_key == "sky_test"

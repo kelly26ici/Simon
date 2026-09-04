@@ -25,6 +25,8 @@ from src.configs.settings import (
     NVIDIA_API_KEY,
     GROQ_API_KEY,
     OPENROUTER_API_KEY,
+    POOLSIDE_API_KEY,
+    POOLSIDE_BASE_URL,
     LLM_PROVIDER,
     LLM_BASE_URL,
     LLM_API_KEY,
@@ -37,7 +39,9 @@ from src.configs.constants import (
     OPENROUTER_MODEL,
     NVIDIA_MODEL,
     DEFAULT_NVIDIA_MODEL,
+    DEFAULT_POOLSIDE_MODEL,
     NVIDIA_CASCADE_MODELS,
+    POOLSIDE_CASCADE_MODELS,
     MODEL_RESET_COOLDOWN_SECONDS,
 )
 from src.tools.registry import registry
@@ -168,15 +172,37 @@ class ModelCascadeManager:
         logger.info("Manually reset active model to primary: '{}'", self.primary_model)
 
 
-# Global cascade manager instance
-cascade_manager = ModelCascadeManager(
+# ---------------------------------------------------------------------------
+# Cascade managers — one per provider; the active one is swapped in after
+# resolve_llm_config() determines the provider (see below).
+# ---------------------------------------------------------------------------
+
+# Poolside AI cascade — fastest → slowest:
+#   XS 2.1 (33B-A3B) → S 2.1 (118B-A8B) → M.1 (225B-A23B) → then other models.
+poolside_cascade_manager = ModelCascadeManager(
+    primary_model=DEFAULT_POOLSIDE_MODEL,
+    cascade_models=POOLSIDE_CASCADE_MODELS,
+    reset_cooldown_seconds=float(LLM_RESET_COOLDOWN_SECONDS),
+)
+
+# NVIDIA cascade — fastest → slowest (Minimax M3 removed).
+nvidia_cascade_manager = ModelCascadeManager(
     primary_model=DEFAULT_NVIDIA_MODEL,
     cascade_models=NVIDIA_CASCADE_MODELS,
     reset_cooldown_seconds=float(LLM_RESET_COOLDOWN_SECONDS),
 )
 
+# Global cascade manager (initialised to the NVIDIA one; swapped after
+# resolve_llm_config() if Poolside is the active provider).
+cascade_manager = nvidia_cascade_manager
 
-def _nvidia_model() -> str:
+
+def _resolve_active_model() -> str:
+    """Resolve the active model, honouring an explicit LLM_MODEL override.
+
+    Falls back to the cascade manager's active model when no override is set
+    or when the override is known to be invalid for the current provider.
+    """
     if LLM_MODEL and LLM_MODEL not in _INVALID_NVIDIA_MODEL_OVERRIDES:
         return LLM_MODEL
     if LLM_MODEL in _INVALID_NVIDIA_MODEL_OVERRIDES:
@@ -188,10 +214,16 @@ def _nvidia_model() -> str:
     return cascade_manager.get_active_model()
 
 
+# Backwards-compatible alias
+_nvidia_model = _resolve_active_model
+
+
 def resolve_llm_config() -> Tuple[str, str, str, str]:
     """
     Resolves the (provider, base_url, api_key, model_name) to use based on configuration
     and available API keys.
+
+    Provider auto-detection priority: Poolside → NVIDIA → OpenRouter → Groq.
     """
     # 1. Custom explicit configuration
     if LLM_BASE_URL and LLM_API_KEY:
@@ -200,26 +232,37 @@ def resolve_llm_config() -> Tuple[str, str, str, str]:
 
     # 2. Explicit provider selection
     provider = (LLM_PROVIDER or "").lower().strip()
+    if provider == "poolside" and POOLSIDE_API_KEY:
+        return "poolside", POOLSIDE_BASE_URL, POOLSIDE_API_KEY, LLM_MODEL or _resolve_active_model()
     if provider == "groq" and GROQ_API_KEY:
         return "groq", "https://api.groq.com/openai/v1", GROQ_API_KEY, LLM_MODEL or GROQ_MODEL
     if provider == "openrouter" and OPENROUTER_API_KEY:
         return "openrouter", "https://openrouter.ai/api/v1", OPENROUTER_API_KEY, LLM_MODEL or OPENROUTER_MODEL
     if provider == "nvidia" and NVIDIA_API_KEY:
-        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, _nvidia_model()
+        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or _resolve_active_model()
 
     # 3. Auto-detection priority:
-    # NVIDIA → OpenRouter → Groq
+    # Poolside → NVIDIA → OpenRouter → Groq
+    if POOLSIDE_API_KEY:
+        return "poolside", POOLSIDE_BASE_URL, POOLSIDE_API_KEY, LLM_MODEL or _resolve_active_model()
     if NVIDIA_API_KEY:
-        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, _nvidia_model()
+        return "nvidia", "https://integrate.api.nvidia.com/v1", NVIDIA_API_KEY, LLM_MODEL or _resolve_active_model()
     if OPENROUTER_API_KEY:
         return "openrouter", "https://openrouter.ai/api/v1", OPENROUTER_API_KEY, LLM_MODEL or OPENROUTER_MODEL
     if GROQ_API_KEY:
         return "groq", "https://api.groq.com/openai/v1", GROQ_API_KEY, LLM_MODEL or GROQ_MODEL
 
-    return "nvidia", "https://integrate.api.nvidia.com/v1", "", _nvidia_model()
+    return "nvidia", "https://integrate.api.nvidia.com/v1", "", _resolve_active_model()
 
+
+# --- Module-level initialization ---
 
 _active_provider, _active_base_url, _active_key, _active_model = resolve_llm_config()
+
+# Swap in the provider-specific cascade manager after the provider is known,
+# so failover candidates match the active API endpoint (Poolside vs NVIDIA).
+if _active_provider == "poolside":
+    cascade_manager = poolside_cascade_manager
 
 # Module-level client (used by default and patched by unit tests)
 client = AsyncOpenAI(
@@ -484,7 +527,7 @@ async def ask_llm(
     max_tool_iterations: int = MAX_TOOL_ITERATIONS,
 ):
     """Sends conversation history to OpenAI-compatible Chat Completions API with automatic tool execution,
-    in-flight model cascading failover, and automatic 1-hour cooldown reset back to primary (Kimi K3).
+    in-flight model cascading failover, and automatic 1-hour cooldown reset back to the active provider's primary model.
 
     If an active model encounters any error (rate limit 429, 5xx, timeout, or auth error),
     the system automatically and seamlessly fails over to the next capable model in the cascade
