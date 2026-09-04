@@ -31,6 +31,15 @@ def _format_wa_link(phone: str, message: Optional[str] = None) -> str:
     return base_link
 
 
+def _agent_display_name(agent: Optional[Dict[str, Any]]) -> str:
+    """Human-readable agent name from a normalized agent row (or empty string)."""
+    if not agent:
+        return ""
+    parts = [agent.get("first_name"), agent.get("last_name")]
+    name = " ".join(p for p in parts if p)
+    return name
+
+
 class ContactSupportSchema(BaseModel):
     """Input for get_support_contact tool."""
 
@@ -81,23 +90,26 @@ async def get_support_contact(payload: ContactSupportSchema) -> Dict[str, Any]:
         },
     }
 
-    # If asking about a specific property, fetch the assigned agent
+    # If asking about a specific property, fetch the assigned listing agent.
     if payload.property_id:
         try:
             prop = await db.get_property_by_id(payload.property_id)
             if prop:
-                agent_name = prop.get("agent_name") or "Realtors Round Tables Listing Agent"
-                agent_phone = prop.get("agent_phone") or exec_phone_display
-                agent_email = prop.get("agent_email")
+                agent = None
+                if prop.get("agent_id"):
+                    agent = await db.get_agent(prop["agent_id"]) or {}
+                name = _agent_display_name(agent) or "Realtors Round Tables Listing Agent"
+                phone = (agent or {}).get("phone") or exec_phone_display
+                email = (agent or {}).get("email")
                 agent_wa = _format_wa_link(
-                    agent_phone,
-                    f"Hello {agent_name}, I am inquiring about '{prop.get('title', 'the property')}'.",
+                    phone,
+                    f"Hello {name}, I am inquiring about '{prop.get('title', 'the property')}'.",
                 )
                 response["listing_agent"] = {
                     "property_title": prop.get("title"),
-                    "agent_name": agent_name,
-                    "agent_phone": agent_phone,
-                    "agent_email": agent_email,
+                    "name": name,
+                    "phone": phone,
+                    "email": email,
                     "whatsapp_link": agent_wa,
                 }
         except Exception as exc:

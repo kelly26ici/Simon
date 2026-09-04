@@ -19,12 +19,22 @@ async def test_get_support_contact_general():
 async def test_get_support_contact_with_property():
     payload = ContactSupportSchema(property_id="prop_456")
     fake_property = {
+        "id": "prop_456",
         "title": "Luxury Apartment",
-        "agent_name": "James Maina",
-        "agent_phone": "0711223344",
-        "agent_email": "james@example.com",
+        "agent_id": "agent-1",
     }
-    with patch("src.tools.support.db.get_property_by_id", new=AsyncMock(return_value=fake_property)):
+    fake_agent = {
+        "id": "agent-1",
+        "first_name": "James",
+        "last_name": "Maina",
+        "phone": "0711223344",
+        "email": "james@example.com",
+        "agency_name": "Realtors Round Tables",
+    }
+    with patch("src.tools.support.db.get_property_by_id", new=AsyncMock(return_value=fake_property)), \
+         patch("src.tools.support.db.get_agent", new=AsyncMock(return_value=fake_agent)):
         result = await get_support_contact(payload)
         assert "listing_agent" in result
-        assert result["listing_agent"]["agent_name"] == "James Maina"
+        assert result["listing_agent"]["name"] == "James Maina"
+        assert result["listing_agent"]["phone"] == "0711223344"
+        assert result["listing_agent"]["email"] == "james@example.com"

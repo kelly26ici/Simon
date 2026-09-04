@@ -46,8 +46,10 @@ async def test_search_properties_api_no_results(app):
 
 @pytest.mark.asyncio
 async def test_get_property_by_id_found(app):
-    fake_prop = {"id": "p-123", "title": "Luxury Villa", "price": 50000000}
-    with patch("src.routes.properties.db.get_property_by_id", new=AsyncMock(return_value=fake_prop)):
+    fake_prop = {"id": "p-123", "title": "Luxury Villa", "price": 50000000,
+                 "images": [{"id": "i1", "url": "https://example.com/villa.jpg", "sort_order": 0, "is_featured": True}],
+                 "agent": {"id": "a1", "first_name": "Faith", "last_name": "Wanjiku", "phone": "0711223344"}}
+    with patch("src.routes.properties.db.get_property_full", new=AsyncMock(return_value=fake_prop)):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/properties/p-123")
@@ -57,7 +59,7 @@ async def test_get_property_by_id_found(app):
 
 @pytest.mark.asyncio
 async def test_get_property_by_id_not_found(app):
-    with patch("src.routes.properties.db.get_property_by_id", new=AsyncMock(return_value=None)):
+    with patch("src.routes.properties.db.get_property_full", new=AsyncMock(return_value=None)):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/properties/nonexistent")

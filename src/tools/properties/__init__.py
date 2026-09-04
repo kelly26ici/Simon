@@ -24,43 +24,67 @@ def _build_property_text(prop: Dict[str, Any]) -> str:
     """Build a rich, searchable text representation of a property with full semantic context."""
     title = prop.get("title", "")
     p_type = prop.get("property_type", "")
+    subtype = prop.get("property_subtype", "")
     l_type = prop.get("listing_type", "")
+    p_period = prop.get("price_period", "")
     loc = prop.get("location", "")
+    address = prop.get("address", "")
+    town = prop.get("town", "")
     city = prop.get("city", "Nairobi")
+    county = prop.get("county", "")
+    country = prop.get("country", "Kenya")
     price = prop.get("price", "")
     currency = prop.get("currency", "KES")
 
     parts = [
         f"Title: {title}",
-        f"Property Type: {p_type}",
-        f"Listing: {l_type}",
-        f"Location: {loc}, {city}",
-        f"Price: {price} {currency}",
     ]
+    if subtype:
+        parts.append(f"{subtype.capitalize()} {p_type}")
+    else:
+        parts.append(f"Property Type: {p_type}")
+    parts.append(f"Listing: {l_type}")
+    if p_period:
+        parts.append(f"Price Period: {p_period}")
+
+    # Location breadcrumb
+    loc_bits = [b for b in [loc, address, town, city, county, country] if b]
+    parts.append(f"Location: {', '.join(loc_bits)}")
+
+    parts.append(f"Price: {price} {currency}")
+    if prop.get("lot_size_sqm"):
+        parts.append(f"Lot/Land: {prop['lot_size_sqm']} sqm")
+    if prop.get("plot_dimensions"):
+        parts.append(f"Plot dimensions: {prop['plot_dimensions']}")
+    if prop.get("land_size_raw"):
+        parts.append(f"Land size: {prop['land_size_raw']}")
 
     if prop.get("bedrooms") is not None:
         parts.append(f"{prop['bedrooms']} Bedrooms")
     if prop.get("bathrooms") is not None:
         parts.append(f"{prop['bathrooms']} Bathrooms")
     if prop.get("square_meters"):
-        parts.append(f"Size: {prop['square_meters']} square meters")
-    if prop.get("lot_size_sqm"):
-        parts.append(f"Land/Lot: {prop['lot_size_sqm']} square meters")
+        parts.append(f"Size: {prop['square_meters']} sqm")
     if prop.get("furnished"):
-        parts.append("Fully furnished")
-    if prop.get("parking_spots"):
-        parts.append(f"Parking: {prop['parking_spots']} dedicated spaces")
+        parts.append("Furnished")
+    if prop.get("year_built"):
+        parts.append(f"Year built: {prop['year_built']}")
+
+    # Amenities feature tags (includes garden/pool/parking/pet-friendly/etc.)
     if prop.get("amenities"):
         amenities_str = ", ".join(prop["amenities"]) if isinstance(prop["amenities"], list) else str(prop["amenities"])
-        parts.append(f"Key Amenities: {amenities_str}")
-    if prop.get("has_garden"):
-        parts.append("Features a lush private garden")
-    if prop.get("has_swimming_pool"):
-        parts.append("Has a swimming pool")
-    if prop.get("pet_friendly"):
-        parts.append("Pet friendly property")
-    if prop.get("gated_community"):
-        parts.append("Located inside a secure gated community")
+        parts.append(f"Amenities: {amenities_str}")
+
+    # Listing agent (if attached by the indexer)
+    agent = prop.get("agent")
+    if isinstance(agent, dict):
+        name = " ".join(filter(None, [agent.get("first_name"), agent.get("last_name")])).strip()
+        if name:
+            parts.append(f"Listed by: {name}")
+        if agent.get("phone"):
+            parts.append(f"Agent phone: {agent['phone']}")
+        if agent.get("agency_name"):
+            parts.append(f"Agency: {agent['agency_name']}")
 
     desc = prop.get("description", "")
     if desc:
@@ -70,26 +94,45 @@ def _build_property_text(prop: Dict[str, Any]) -> str:
 
 
 def _build_point_payload(prop: Dict[str, Any]) -> Dict[str, Any]:
-    """Extracts indexed and metadata payload for a Qdrant point."""
+    """Extracts indexed and metadata payload for a Qdrant point.
+
+    Mirrors the new Property254 model: features live in `amenities`, the
+    listing agent is referenced by `agent_id`, and the gallery lives in
+    `images` (stored as a compact list of URL strings here).
+    """
+    images = prop.get("images", [])
+    if isinstance(images, list):
+        image_urls = [im.get("url") if isinstance(im, dict) else im for im in images]
+    else:
+        image_urls = []
+
+    agent = prop.get("agent")
+    agent_id = prop.get("agent_id")
+    if not agent_id and isinstance(agent, dict):
+        agent_id = agent.get("id")
+
     return {
         "title": prop.get("title", ""),
         "description": prop.get("description", ""),
         "property_type": str(prop.get("property_type", "")),
+        "property_subtype": str(prop.get("property_subtype", "")),
         "listing_type": str(prop.get("listing_type", "")),
+        "price_period": str(prop.get("price_period", "")),
         "price": float(prop.get("price", 0)),
         "currency": prop.get("currency", "KES"),
         "bedrooms": int(prop.get("bedrooms", 0) or 0),
         "bathrooms": int(prop.get("bathrooms", 0) or 0),
         "square_meters": float(prop.get("square_meters", 0) or 0),
+        "lot_size_sqm": prop.get("lot_size_sqm"),
         "location": prop.get("location", ""),
+        "address": prop.get("address", ""),
+        "town": prop.get("town", ""),
         "city": prop.get("city", "Nairobi"),
+        "country": prop.get("country", "Kenya"),
         "amenities": prop.get("amenities", []) if isinstance(prop.get("amenities"), list) else [],
         "furnished": bool(prop.get("furnished", False)),
-        "has_garden": bool(prop.get("has_garden", False)),
-        "has_swimming_pool": bool(prop.get("has_swimming_pool", False)),
-        "images": prop.get("images", []) if isinstance(prop.get("images"), list) else [],
-        "agent_name": prop.get("agent_name", ""),
-        "agent_phone": prop.get("agent_phone", ""),
+        "images": image_urls,
+        "agent_id": str(agent_id) if agent_id else "",
         "status": prop.get("status", "available"),
     }
 
@@ -99,7 +142,7 @@ async def index_property(property_data: Union[str, Dict[str, Any]]) -> bool:
     await make_collection(PROPERTIES_COLLECTION)
 
     if isinstance(property_data, str):
-        prop = await db.get_property_by_id(property_data)
+        prop = await db.get_property_full(property_data)
         if not prop:
             logger.warning("Cannot index property {}: not found in DB", property_data)
             return False
@@ -140,6 +183,18 @@ async def index_all_properties(concurrency: int = 6) -> int:
     if not properties:
         logger.warning("No properties found in Supabase to index.")
         return 0
+
+    # Attach ordered image galleries + agent profiles in batched lookups so the
+    # indexer does not issue N+1 queries per property.
+    pids = [str(p.get("id")) for p in properties if p.get("id")]
+    agent_ids = [str(p.get("agent_id")) for p in properties if p.get("agent_id")]
+    images_map = await db.get_property_images_batch(pids)
+    agents_map = await db.get_agents_by_ids(agent_ids)
+    for p in properties:
+        pid = str(p.get("id"))
+        p["images"] = images_map.get(pid, [])
+        aid = p.get("agent_id")
+        p["agent"] = agents_map.get(str(aid)) if aid else None
 
     logger.info("Indexing {} properties into Qdrant with concurrency={}...", len(properties), concurrency)
     sem = asyncio.Semaphore(concurrency)
@@ -207,6 +262,8 @@ async def delete_property_index(property_id: str) -> bool:
     except Exception:
         logger.exception("Failed to delete property {} from Qdrant", property_id)
         return False
+
+
 async def semantic_search(
     query: str,
     limit: int = 5,
@@ -217,6 +274,10 @@ async def semantic_search(
     property_type: Optional[str] = None,
     listing_type: Optional[str] = None,
     bedrooms: Optional[int] = None,
+    price_period: Optional[str] = None,
+    property_subtype: Optional[str] = None,
+    town: Optional[str] = None,
+    country: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Search properties semantically using Qdrant vector similarity with metadata filters."""
     await ensure_collection(PROPERTIES_COLLECTION)
@@ -252,6 +313,14 @@ async def semantic_search(
         must_filters.append(FieldCondition(key="listing_type", match=MatchValue(value=listing_type)))
     if bedrooms is not None:
         must_filters.append(FieldCondition(key="bedrooms", match=MatchValue(value=bedrooms)))
+    if price_period:
+        must_filters.append(FieldCondition(key="price_period", match=MatchValue(value=price_period)))
+    if property_subtype:
+        must_filters.append(FieldCondition(key="property_subtype", match=MatchValue(value=property_subtype)))
+    if town:
+        must_filters.append(FieldCondition(key="town", match=MatchValue(value=town)))
+    if country:
+        must_filters.append(FieldCondition(key="country", match=MatchValue(value=country)))
 
     # Only available properties
     must_filters.append(FieldCondition(key="status", match=MatchValue(value="available")))

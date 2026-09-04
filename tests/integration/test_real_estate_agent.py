@@ -57,18 +57,22 @@ async def test_get_support_contact():
     assert "https://wa.me/254701454854" in res["customer_service_executive"]["whatsapp_link"]
 
     # Test with property id
-    with patch("src.tools.support.db") as mock_db:
-        mock_db.get_property_by_id = AsyncMock(return_value={
-            "id": "prop-999",
-            "title": "Riverside Green Duplex",
-            "agent_name": "David Mwangi",
-            "agent_phone": "0701234567",
-            "agent_email": "david@realtorsroundtables.co.ke",
-        })
+    fake_prop = {"id": "prop-999", "title": "Riverside Green Duplex", "agent_id": "agent-1"}
+    fake_agent = {
+        "id": "agent-1",
+        "first_name": "David",
+        "last_name": "Mwangi",
+        "phone": "0701234567",
+        "email": "david@realtorsroundtables.co.ke",
+        "agency_name": "Realtors Round Tables",
+    }
+    with patch("src.tools.support.db.get_property_by_id", new=AsyncMock(return_value=fake_prop)), \
+         patch("src.tools.support.db.get_agent", new=AsyncMock(return_value=fake_agent)):
         prop_res = await get_support_contact(ContactSupportSchema(property_id="prop-999"))
         assert prop_res["status"] == "success"
         assert "listing_agent" in prop_res
-        assert prop_res["listing_agent"]["agent_name"] == "David Mwangi"
+        assert prop_res["listing_agent"]["name"] == "David Mwangi"
+        assert prop_res["listing_agent"]["phone"] == "0701234567"
         assert "https://wa.me/254701234567" in prop_res["listing_agent"]["whatsapp_link"]
 
 
@@ -91,14 +95,23 @@ async def test_calculate_mortgage():
 
 @pytest.mark.asyncio
 async def test_schedule_and_get_viewing():
+    fake_prop = {
+        "id": "prop-123",
+        "title": "Rhapta Heights Luxury Penthouse",
+        "location": "Westlands",
+        "agent_id": "agent-1",
+    }
+    fake_agent = {
+        "id": "agent-1",
+        "first_name": "Kevin",
+        "last_name": "Mutua",
+        "phone": "+254 722 890 123",
+        "email": "kevin@realtorsroundtables.co.ke",
+        "agency_name": "Realtors Round Tables",
+    }
     with patch("src.tools.schedule_meeting.db") as mock_db:
-        mock_db.get_property_by_id = AsyncMock(return_value={
-            "id": "prop-123",
-            "title": "Rhapta Heights Luxury Penthouse",
-            "location": "Westlands",
-            "agent_name": "Kevin Mutua",
-            "agent_phone": "+254 722 890 123",
-        })
+        mock_db.get_property_by_id = AsyncMock(return_value=fake_prop)
+        mock_db.get_agent = AsyncMock(return_value=fake_agent)
         mock_db.create_scheduled_viewing = AsyncMock(return_value={
             "id": "viewing-uuid-1",
             "status": "confirmed",
@@ -133,27 +146,36 @@ async def test_schedule_and_get_viewing():
 
 @pytest.mark.asyncio
 async def test_get_property_details():
-    with patch("src.tools.properties.tools.db") as mock_db:
-        mock_db.get_property_by_id = AsyncMock(return_value={
-            "id": "prop-456",
-            "title": "Karen Brooks 5-Bedroom Luxury Villa",
-            "description": "Spectacular 5-bedroom villa with pool",
-            "price": 95000000,
-            "currency": "KES",
-            "bedrooms": 5,
-            "bathrooms": 6,
-            "location": "Karen",
-            "city": "Nairobi",
-            "amenities": ["swimming_pool", "garden"],
-            "agent_name": "Grace Nyambura",
-            "images": ["https://example.com/photo1.jpg"],
-        })
+    full = {
+        "id": "prop-456",
+        "title": "Karen Brooks 5-Bedroom Luxury Villa",
+        "description": "Spectacular 5-bedroom villa with pool",
+        "price": 95000000,
+        "currency": "KES",
+        "bedrooms": 5,
+        "bathrooms": 6,
+        "location": "Karen",
+        "city": "Nairobi",
+        "property_type": "house",
+        "property_subtype": "bungalow",
+        "listing_type": "sale",
+        "price_period": "one_time",
+        "square_meters": 450,
+        "lot_size_sqm": 1200,
+        "amenities": ["swimming_pool", "garden"],
+        "agent_id": "agent-1",
+        "images": [{"id": "img1", "url": "https://example.com/photo1.jpg", "sort_order": 0, "is_featured": True}],
+        "agent": {"id": "agent-1", "first_name": "Grace", "last_name": "Nyambura",
+                  "phone": "0701454854", "email": "grace@realtorsroundtables.co.ke",
+                  "agency_name": "Realtors Round Tables"},
+    }
+    with patch("src.tools.properties.tools.db.get_property_full", new=AsyncMock(return_value=full)):
         payload = GetPropertyDetailsSchema(property_id="prop-456")
         res = await get_property_details(payload)
         assert res["status"] == "success"
         assert res["property"]["title"] == "Karen Brooks 5-Bedroom Luxury Villa"
         assert res["property"]["price"] == 95000000.0
-        assert res["property"]["agent_name"] == "Grace Nyambura"
+        assert res["property"]["listing_agent"]["name"] == "Grace Nyambura"
 
 
 @pytest.mark.asyncio

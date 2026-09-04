@@ -74,14 +74,27 @@ async def cmd_status():
 
 
 async def cmd_seed():
-    """Seed Supabase and Qdrant."""
+    """Seed the prime sample properties into Supabase + Qdrant."""
+    from src.data.ingest_properties import split_property_relations
+
     print(f"Seeding {len(PROPERTIES_SEED_DATA)} prime properties...")
+    fingerprint = "title,location,price,listing_type,property_type,price_period"
     saved = 0
     for prop in PROPERTIES_SEED_DATA:
-        res = await db.upsert_property(prop, on_conflict="title,location,price,listing_type,property_type")
-        if res:
-            saved += 1
-            print(f"  + {prop['title']}")
+        try:
+            row, images, agent = split_property_relations(prop)
+            if agent:
+                arow = await db.upsert_agent(agent)
+                if arow:
+                    row["agent_id"] = str(arow["id"])
+            res = await db.upsert_property(row, on_conflict=fingerprint)
+            if res:
+                saved += 1
+                print(f"  + {prop['title']}")
+                if images and res.get("id"):
+                    await db.add_property_images(str(res["id"]), images)
+        except Exception:
+            logger.exception("Failed to seed: {}", prop.get("title"))
     print(f"\nSaved {saved} properties in Supabase.")
     print("Indexing into Qdrant...")
     count = await index_all_properties()

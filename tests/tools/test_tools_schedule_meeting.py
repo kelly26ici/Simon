@@ -27,8 +27,18 @@ async def test_schedule_property_viewing_success():
         "viewing_date": "2026-09-01 14:00",
         "status": "confirmed",
     }
+    fake_property = {"title": "Karen Villa", "agent_id": "agent-1"}
+    fake_agent = {
+        "id": "agent-1",
+        "first_name": "James",
+        "last_name": "Maina",
+        "phone": "0711223344",
+        "email": "james@example.com",
+        "agency_name": "Realtors Round Tables",
+    }
     with patch("src.tools.schedule_meeting.db.create_scheduled_viewing", new=AsyncMock(return_value=fake_viewing)), \
-         patch("src.tools.schedule_meeting.db.get_property_by_id", new=AsyncMock(return_value={"title": "Karen Villa", "agent_name": "Simon", "agent_phone": "0701454854"})), \
+         patch("src.tools.schedule_meeting.db.get_property_by_id", new=AsyncMock(return_value=fake_property)), \
+         patch("src.tools.schedule_meeting.db.get_agent", new=AsyncMock(return_value=fake_agent)), \
          patch("src.tools.schedule_meeting.db.upsert_customer_profile", new=AsyncMock()):
         res = await schedule_property_viewing(payload)
         assert res["status"] == "confirmed"

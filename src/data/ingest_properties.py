@@ -291,8 +291,8 @@ def normalize_amenities(raw_amenities: Any) -> List[str]:
         "servant quarter": "dsq",
         "garden": "garden",
         "parking": "parking",
-        "pet friendly": "pet_friendly",
-        "gated community": "gated_community",
+        "pet friendly": "pet_allowed",
+        "gated community": "gated",
         "fibre internet": "fiber_internet",
         "internet": "fiber_internet",
         "solar water": "solar_water_heating",
@@ -322,6 +322,79 @@ def generate_photos_for_type(p_type: str, count: int = 3) -> List[str]:
     """Pick representative photos from curated pool."""
     pool = IMAGE_POOLS.get(p_type, IMAGE_POOLS["apartment"])
     return random.sample(pool, min(count, len(pool)))
+
+
+def agent_from_entry(name: str, phone: str, email: str, agency: str = "Realtors Round Tables") -> Dict[str, Any]:
+    """Build a normalized agent dict (to be find-or-created in the `agents` table)."""
+    parts = (name or "").split(None, 1)
+    return {
+        "first_name": parts[0] if parts else None,
+        "last_name": parts[1] if len(parts) > 1 else None,
+        "phone": phone,
+        "email": email,
+        "agency_name": agency,
+    }
+
+
+def infer_property_subtype(title: str, p_type: str) -> Optional[str]:
+    """Infer a property subtype (duplex/bungalow/maisonette/semi-detached) from the listing title.
+
+    ``duplex``/``bungalow``/``maisonette`` live in the free-text
+    ``property_subtype`` column rather than the ``property_type`` enum.
+    """
+    t = (title or "").lower()
+    if "duplex" in t:
+        return "duplex"
+    if "bungalow" in t:
+        return "bungalow"
+    if "maisonette" in t:
+        return "maisonette"
+    if "semi-detached" in t:
+        return "semi-detached"
+    return None
+
+
+def price_period_for(listing_type: str) -> str:
+    """Derive the price period from the listing purpose (sale=one_time, rent=per_month)."""
+    return "per_month" if (listing_type or "").lower() == "rent" else "one_time"
+
+
+def merge_amenities(
+    base: List[str],
+    parking: bool = False,
+    garden: bool = False,
+    pool: bool = False,
+    pet: bool = False,
+    gated: bool = False,
+) -> List[str]:
+    """Fold the legacy feature booleans into the unified amenities tag array."""
+    out = list(base)
+    for tag, val in [
+        ("parking", parking),
+        ("garden", garden),
+        ("swimming_pool", pool),
+        ("pet_allowed", pet),
+        ("gated", gated),
+    ]:
+        if val and tag not in out:
+            out.append(tag)
+    return out
+
+
+def split_property_relations(prop: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str], Optional[Dict[str, Any]]]:
+    """Separate the normalized gallery ``images`` and ``agent`` dict out of a property row.
+
+    The ``properties`` table holds neither — images live in ``property_images``
+    and the agent is linked via ``agent_id``. Returns ``(row, images, agent_dict)``.
+    """
+    row = dict(prop)
+    images = row.pop("images", None) or []
+    agent = row.pop("agent", None)
+    if isinstance(images, list):
+        images = [im if isinstance(im, str) else (im.get("url") if isinstance(im, dict) else str(im)) for im in images]
+    else:
+        images = [images] if images else []
+    return row, images, agent
 
 
 def generate_rich_description(
@@ -454,27 +527,27 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "title": title,
                 "description": generate_rich_description(title, "land", "sale", f"{spot}, Kangundo Road", p, None, None, None, amenities),
                 "property_type": "land",
+                "property_subtype": infer_property_subtype(title, "land"),
                 "listing_type": "sale",
+                "price_period": price_period_for("sale"),
                 "status": "available",
                 "price": p,
                 "currency": "KES",
                 "lot_size_sqm": lot_sqm,
+                "plot_dimensions": f"{lot_sqm} sqm plot",
+                "land_size_raw": f"{lot_sqm} sqm",
                 "location": f"{spot}, Kangundo Road",
+                "address": dist,
+                "town": spot,
                 "city": city,
                 "county": county,
+                "country": "Kenya",
                 "latitude": j_lat,
                 "longitude": j_lng,
-                "amenities": amenities,
+                "amenities": merge_amenities(amenities, parking=True, garden=True, pet=True, gated=("gated" in label.lower())),
                 "furnished": False,
-                "parking_spots": 2,
-                "has_garden": True,
-                "has_swimming_pool": False,
-                "pet_friendly": True,
-                "gated_community": "gated" in label.lower(),
                 "images": generate_photos_for_type("land", 3),
-                "agent_name": agent["name"],
-                "agent_phone": agent["phone"],
-                "agent_email": agent["email"],
+                "agent": agent_from_entry(agent["name"], agent["phone"], agent["email"]),
                 "source": "Simon Kangundo Exclusives",
             })
 
@@ -485,7 +558,7 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
             agent_cycle += 1
             estate = random.choice(["Greenwood Estate", "Oasis Court", "Hillview Gardens", "Sunrise Enclave", "Harmony Homes", "Pride Park"])
             title = f"{label} at {estate}, {spot}"
-            amenities = ["borehole", "backup_generator", "cctv", "perimeter_wall", "electric_fence", "parking", "garden", "ready_title_deed", "gated_community", "solar_water_heating"]
+            amenities = ["borehole", "backup_generator", "cctv", "perimeter_wall", "electric_fence", "parking", "garden", "ready_title_deed", "gated", "solar_water_heating"]
             p_type = "townhouse" if "townhouse" in label.lower() else "villa" if "villa" in label.lower() else "house"
             j_lat = round(lat + random.uniform(-0.008, 0.008), 5)
             j_lng = round(lng + random.uniform(-0.008, 0.008), 5)
@@ -494,7 +567,9 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "title": title,
                 "description": generate_rich_description(title, p_type, "sale", f"{spot}, Kangundo Road", p, beds, baths, sqm, amenities),
                 "property_type": p_type,
+                "property_subtype": infer_property_subtype(title, p_type),
                 "listing_type": "sale",
+                "price_period": price_period_for("sale"),
                 "status": "available",
                 "price": p,
                 "currency": "KES",
@@ -504,21 +579,17 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "lot_size_sqm": 500,
                 "year_built": random.choice([2022, 2023, 2024, 2025]),
                 "location": f"{spot}, Kangundo Road",
+                "address": None,
+                "town": spot,
                 "city": city,
                 "county": county,
+                "country": "Kenya",
                 "latitude": j_lat,
                 "longitude": j_lng,
-                "amenities": amenities,
+                "amenities": merge_amenities(amenities, parking=True, garden=True, pet=True, gated=True),
                 "furnished": False,
-                "parking_spots": 2,
-                "has_garden": True,
-                "has_swimming_pool": False,
-                "pet_friendly": True,
-                "gated_community": True,
                 "images": generate_photos_for_type(p_type, 3),
-                "agent_name": agent["name"],
-                "agent_phone": agent["phone"],
-                "agent_email": agent["email"],
+                "agent": agent_from_entry(agent["name"], agent["phone"], agent["email"]),
                 "source": "Simon Kangundo Exclusives",
             })
 
@@ -537,7 +608,9 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "title": title,
                 "description": generate_rich_description(title, p_type, "rent", f"{spot}, Kangundo Road", p, beds, baths, sqm, amenities),
                 "property_type": p_type,
+                "property_subtype": infer_property_subtype(title, p_type),
                 "listing_type": "rent",
+                "price_period": price_period_for("rent"),
                 "status": "available",
                 "price": p,
                 "currency": "KES",
@@ -548,21 +621,17 @@ def generate_kangundo_road_properties() -> List[Dict[str, Any]]:
                 "floor_number": random.randint(1, 4),
                 "total_floors": 4,
                 "location": f"{spot}, Kangundo Road",
+                "address": None,
+                "town": spot,
                 "city": city,
                 "county": county,
+                "country": "Kenya",
                 "latitude": j_lat,
                 "longitude": j_lng,
                 "amenities": amenities,
                 "furnished": False,
-                "parking_spots": 1,
-                "has_garden": False,
-                "has_swimming_pool": False,
-                "pet_friendly": False,
-                "gated_community": False,
                 "images": generate_photos_for_type(p_type, 3),
-                "agent_name": agent["name"],
-                "agent_phone": agent["phone"],
-                "agent_email": agent["email"],
+                "agent": agent_from_entry(agent["name"], agent["phone"], agent["email"]),
                 "source": "Simon Kangundo Exclusives",
             })
 
@@ -668,11 +737,21 @@ async def fetch_and_normalize_scraped_dataset(limit_per_file: int = 350) -> List
                         amenities=amenities,
                     )
 
+                    amenities = merge_amenities(
+                        amenities,
+                        parking=True,
+                        garden=(p_type in ("house", "villa", "townhouse")),
+                        pool=("swimming_pool" in amenities),
+                        pet=("pet_allowed" in amenities),
+                        gated=("gated" in amenities),
+                    )
                     all_properties.append({
                         "title": raw_title,
                         "description": desc,
                         "property_type": p_type,
+                        "property_subtype": infer_property_subtype(raw_title, p_type),
                         "listing_type": l_type,
+                        "price_period": price_period_for(l_type),
                         "status": "available",
                         "price": price,
                         "currency": "KES",
@@ -680,25 +759,22 @@ async def fetch_and_normalize_scraped_dataset(limit_per_file: int = 350) -> List
                         "bathrooms": baths,
                         "square_meters": sqm,
                         "lot_size_sqm": sqm if p_type == "land" else None,
+                        "plot_dimensions": f"{sqm} sqm" if p_type == "land" and sqm else None,
+                        "land_size_raw": f"{sqm} sqm" if p_type == "land" and sqm else None,
                         "year_built": random.choice([2020, 2021, 2022, 2023, 2024, 2025]),
                         "floor_number": random.randint(1, 10) if p_type in ("apartment", "penthouse") else None,
                         "total_floors": 12 if p_type in ("apartment", "penthouse") else None,
                         "location": loc_name,
+                        "town": None,
                         "city": city,
                         "county": county,
+                        "country": "Kenya",
                         "latitude": lat,
                         "longitude": lng,
                         "amenities": amenities,
                         "furnished": "furnished" in amenities or "furnished" in raw_title.lower(),
-                        "parking_spots": 2 if p_type in ("house", "townhouse", "villa") else 1,
-                        "has_garden": "garden" in amenities or p_type in ("house", "villa", "townhouse"),
-                        "has_swimming_pool": "swimming_pool" in amenities,
-                        "pet_friendly": "pet_friendly" in amenities,
-                        "gated_community": "gated_community" in amenities,
                         "images": generate_photos_for_type(p_type, 3),
-                        "agent_name": agent["name"],
-                        "agent_phone": agent["phone"],
-                        "agent_email": agent["email"],
+                        "agent": agent_from_entry(agent["name"], agent["phone"], agent["email"]),
                         "source": "BuyRentKenya Scraped",
                     })
 

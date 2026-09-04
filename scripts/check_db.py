@@ -65,14 +65,25 @@ EXPECTED: dict[str, list[str]] = {
         "created_at", "updated_at",
     ],
     "properties": [
-        "id", "title", "description", "property_type", "listing_type", "status",
+        "id", "title", "description", "property_type", "property_subtype",
+        "listing_type", "price_period", "status",
         "price", "currency", "price_per_sqm", "bedrooms", "bathrooms",
-        "square_meters", "lot_size_sqm", "year_built", "floor_number",
-        "total_floors", "location", "city", "county", "latitude", "longitude",
-        "amenities", "furnished", "parking_spots", "has_garden",
-        "has_swimming_pool", "pet_friendly", "gated_community", "images",
-        "video_url", "virtual_tour_url", "agent_name", "agent_phone",
-        "agent_email", "source", "external_id", "created_at", "updated_at",
+        "square_meters", "lot_size_sqm", "plot_dimensions", "land_size_raw",
+        "year_built", "floor_number", "total_floors", "location", "address",
+        "town", "city", "county", "country", "latitude", "longitude",
+        "amenities", "furnished", "agent_id",
+        "video_url", "source", "external_id", "created_at", "updated_at",
+    ],
+    "agents": [
+        "id", "first_name", "last_name", "email", "phone", "agency_name",
+        "bio", "is_verified", "avatar_url", "created_at", "updated_at",
+    ],
+    "property_images": [
+        "id", "property_id", "url", "sort_order", "is_featured", "created_at",
+    ],
+    "property_inquiries": [
+        "id", "customer_phone", "customer_name", "customer_email", "property_id",
+        "agent_id", "inquiry_type", "message", "metadata", "created_at",
     ],
 }
 

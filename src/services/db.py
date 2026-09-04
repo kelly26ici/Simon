@@ -338,12 +338,16 @@ class DatabaseClient:
         properties_data: List[Dict[str, Any]],
         batch_size: int = 100,
         on_conflict: Optional[str] = None,
-    ) -> int:
-        """Insert or update multiple properties in batches."""
-        if not self.client or not properties_data:
-            return 0
+    ) -> List[Dict[str, Any]]:
+        """Insert or update multiple properties in batches.
 
-        saved_total = 0
+        Returns the upserted rows (with ids) so callers can attach dependent
+        data such as the image gallery.
+        """
+        if not self.client or not properties_data:
+            return []
+
+        saved_rows: List[Dict[str, Any]] = []
         for i in range(0, len(properties_data), batch_size):
             batch = properties_data[i : i + batch_size]
             def _upsert_batch(b=batch):
@@ -351,16 +355,16 @@ class DatabaseClient:
                 if on_conflict:
                     kwargs["on_conflict"] = on_conflict
                 res = self.client.table("properties").upsert(b, **kwargs).execute()
-                return len(res.data) if res.data else 0
+                return res.data or []
 
             try:
-                count = await self._run_sync(_upsert_batch)
-                saved_total += count
-                logger.info("Upserted batch {}/{} ({} properties)", i // batch_size + 1, (len(properties_data) + batch_size - 1) // batch_size, count)
+                rows = await self._run_sync(_upsert_batch)
+                saved_rows.extend(rows)
+                logger.info("Upserted batch {}/{} ({} properties)", i // batch_size + 1, (len(properties_data) + batch_size - 1) // batch_size, len(rows))
             except Exception as exc:
                 logger.error("Failed to upsert batch starting at {}: {}", i, exc)
 
-        return saved_total
+        return saved_rows
 
     async def get_property_by_id(self, property_id: str) -> Optional[Dict[str, Any]]:
         """Fetch a single property by its UUID."""
@@ -453,6 +457,8 @@ class DatabaseClient:
         self,
         property_type: Optional[str] = None,
         listing_type: Optional[str] = None,
+        price_period: Optional[str] = None,
+        property_subtype: Optional[str] = None,
         min_price: Optional[float] = None,
         max_price: Optional[float] = None,
         bedrooms: Optional[int] = None,
@@ -460,20 +466,29 @@ class DatabaseClient:
         bathrooms: Optional[int] = None,
         min_sqm: Optional[float] = None,
         max_sqm: Optional[float] = None,
+        min_lot_size_sqm: Optional[float] = None,
+        max_lot_size_sqm: Optional[float] = None,
         location: Optional[str] = None,
+        town: Optional[str] = None,
         city: Optional[str] = None,
+        country: Optional[str] = None,
         amenities: Optional[List[str]] = None,
         furnished: Optional[bool] = None,
-        pet_friendly: Optional[bool] = None,
-        gated_community: Optional[bool] = None,
         sort_by: str = "price",
         sort_order: str = "asc",
         limit: int = 5,
         offset: int = 0,
+        include_images: bool = False,
+        include_agents: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Advanced property search with range filters, fuzzy location matching,
         amenity array containment, sorting, and pagination.
+
+        Amenity *feature* booleans that previously lived as dedicated columns
+        (garden, pool, pet-friendly, gated community, parking) are now part of
+        the `amenities` tag array and are filtered via `amenities`
+        (array-contains-ALL). `furnished` is retained as a structured column.
         """
         if not self.client:
             return []
@@ -486,20 +501,24 @@ class DatabaseClient:
                 query = query.eq("property_type", property_type)
             if listing_type:
                 query = query.eq("listing_type", listing_type)
+            if price_period:
+                query = query.eq("price_period", price_period)
+            if property_subtype:
+                query = query.ilike("property_subtype", f"%{property_subtype}%")
             if location:
                 query = query.ilike("location", f"%{location}%")
+            if town:
+                query = query.ilike("town", f"%{town}%")
             if city:
                 query = query.ilike("city", f"%{city}%")
+            if country:
+                query = query.eq("country", country)
             if bedrooms is not None:
                 query = query.eq("bedrooms", bedrooms)
             if bathrooms is not None:
                 query = query.eq("bathrooms", bathrooms)
             if furnished is not None:
                 query = query.eq("furnished", furnished)
-            if pet_friendly is not None:
-                query = query.eq("pet_friendly", pet_friendly)
-            if gated_community is not None:
-                query = query.eq("gated_community", gated_community)
 
             # Range filters
             if min_price is not None:
@@ -512,6 +531,10 @@ class DatabaseClient:
                 query = query.gte("square_meters", min_sqm)
             if max_sqm is not None:
                 query = query.lte("square_meters", max_sqm)
+            if min_lot_size_sqm is not None:
+                query = query.gte("lot_size_sqm", min_lot_size_sqm)
+            if max_lot_size_sqm is not None:
+                query = query.lte("lot_size_sqm", max_lot_size_sqm)
 
             # Array containment — property must have ALL specified amenities
             if amenities:
@@ -529,7 +552,23 @@ class DatabaseClient:
             query = query.range(offset, offset + limit - 1)
 
             response = query.execute()
-            return response.data or []
+            rows = response.data or []
+
+            # Optionally attach ordered image galleries + agent profiles.
+            if rows and (include_images or include_agents):
+                ids = [str(r["id"]) for r in rows]
+                if include_images:
+                    images_map = self._sync_get_property_images_batch(ids)
+                    for r in rows:
+                        r["images"] = images_map.get(str(r["id"]), [])
+                if include_agents:
+                    agent_ids = [str(r["agent_id"]) for r in rows if r.get("agent_id")]
+                    agents_map = self._sync_get_agents_by_ids(agent_ids)
+                    for r in rows:
+                        aid = r.get("agent_id")
+                        r["agent"] = agents_map.get(str(aid)) if aid else None
+
+            return rows
 
         try:
             return await self._run_sync(_advanced_search)
@@ -559,6 +598,209 @@ class DatabaseClient:
         except Exception as exc:
             logger.exception("Failed to delete property {}: {}", property_id, exc)
             return False
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Property Images (normalized ordered gallery)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _sync_get_property_images_batch(self, property_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        """Synchronous fetch (callable inside the search worker thread).
+
+        Returns {property_id: [ordered image rows]} with featured first.
+        """
+        if not self.client or not property_ids:
+            return {}
+        try:
+            rows = (
+                self.client.table("property_images")
+                .select("*")
+                .in_("property_id", property_ids)
+                .order("is_featured", desc=True)
+                .order("sort_order")
+                .execute()
+                .data or []
+            )
+        except Exception as exc:
+            logger.debug("property_images batch fetch failed: {}", exc)
+            return {}
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for im in rows:
+            grouped.setdefault(str(im["property_id"]), []).append(im)
+        return grouped
+
+    async def get_property_images(self, property_id: str) -> List[Dict[str, Any]]:
+        """Ordered image rows for a property (featured first)."""
+        return await self._run_sync(self._sync_get_property_images_batch, [property_id]).get(property_id, [])  # type: ignore[arg-type]
+
+    async def get_property_images_batch(self, property_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        """Ordered image rows for many properties. {property_id: [rows]}."""
+        return await self._run_sync(self._sync_get_property_images_batch, property_ids)  # type: ignore[arg-type]
+
+    async def add_property_image(
+        self,
+        property_id: str,
+        url: str,
+        sort_order: int = 0,
+        is_featured: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            return None
+
+        def _insert():
+            res = (
+                self.client.table("property_images")
+                .insert({"property_id": property_id, "url": url, "sort_order": sort_order, "is_featured": is_featured})
+                .execute()
+            )
+            return res.data[0] if res.data else None
+
+        try:
+            return await self._run_sync(_insert)
+        except Exception as exc:
+            logger.debug("add_property_image failed: {}", exc)
+            return None
+
+    async def add_property_images(self, property_id: str, images: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Attach an ordered image gallery (each dict: url, sort_order?, is_featured?)."""
+        if not self.client or not images:
+            return []
+        rows = [
+            {
+                "property_id": property_id,
+                "url": im.get("url") if isinstance(im, dict) else str(im),
+                "sort_order": int(im.get("sort_order", idx)) if isinstance(im, dict) else idx,
+                "is_featured": bool(im.get("is_featured", False)) if isinstance(im, dict) else False,
+            }
+            for idx, im in enumerate(images)
+        ]
+        # Promote the first image to featured if none explicitly featured.
+        if not any(r["is_featured"] for r in rows) and rows:
+            rows[0]["is_featured"] = True
+
+        def _insert():
+            res = self.client.table("property_images").upsert(rows, on_conflict="property_id,sort_order").execute()
+            return res.data or []
+
+        try:
+            return await self._run_sync(_insert)
+        except Exception as exc:
+            logger.debug("add_property_images batch failed: {}", exc)
+            return []
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Agents
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _sync_get_agents_by_ids(self, agent_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Synchronous fetch of agents by id (usable inside the search thread)."""
+        if not self.client or not agent_ids:
+            return {}
+        try:
+            rows = self.client.table("agents").select("*").in_("id", agent_ids).execute().data or []
+        except Exception as exc:
+            logger.debug("agents batch fetch failed: {}", exc)
+            return {}
+        return {str(a["id"]): a for a in rows}
+
+    async def get_agent(self, agent_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not self.client or not agent_id:
+            return None
+
+        def _get():
+            try:
+                res = self.client.table("agents").select("*").eq("id", agent_id).maybe_single().execute()
+                return res.data if res.data else None
+            except Exception as exc:
+                logger.debug("get_agent({}) failed: {}", agent_id, exc)
+                return None
+
+        return await self._run_sync(_get)
+
+    async def get_agents_by_ids(self, agent_ids: List[str]) -> Dict[str, Optional[Dict[str, Any]]]:
+        return await self._run_sync(self._sync_get_agents_by_ids, agent_ids)  # type: ignore[arg-type]
+
+    async def upsert_agent(self, agent_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Find-or-create a listing agent by normalized phone and/or email.
+
+        Accepts {first_name, last_name, email, phone, agency_name, bio, ...}.
+        Returns the existing or freshly created agent row (with id).
+        """
+        if not self.client:
+            return None
+
+        allowed = {"first_name", "last_name", "email", "phone", "agency_name", "bio", "is_verified", "avatar_url"}
+        base = {k: v for k, v in agent_data.items() if k in allowed and v is not None}
+        phone = base.get("phone")
+        email = base.get("email")
+
+        def _upsert():
+            found = None
+            if phone:
+                r = self.client.table("agents").select("*").eq("phone", phone).maybe_single().execute()
+                found = getattr(r, "data", None) or None
+            if not found and email:
+                r = self.client.table("agents").select("*").eq("email", email).maybe_single().execute()
+                found = getattr(r, "data", None) or None
+            # Supabase returns a *list* of rows; callers expect a single dict
+            # (the upserted row), matching the -> Optional[Dict[str, Any]] contract.
+            if found:
+                res = self.client.table("agents").update(base).eq("id", found["id"]).execute()
+                return (res.data or [None])[0]
+            res = self.client.table("agents").insert(base).execute()
+            return (res.data or [None])[0]
+
+        return await self._run_sync(_upsert)
+
+    async def get_property_full(self, property_id: str) -> Optional[Dict[str, Any]]:
+        """Property row + ordered images + agent profile (single source of truth)."""
+        prop = await self.get_property_by_id(property_id)
+        if not prop:
+            return None
+        images = await self.get_property_images(property_id)
+        prop["images"] = images
+        agent = None
+        if prop.get("agent_id"):
+            agent = await self.get_agent(prop["agent_id"])
+        prop["agent"] = agent
+        return prop
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Leads / Inquiries  (Property254 "Contact Us" contact form)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def record_property_inquiry(
+        self,
+        customer_phone: str,
+        customer_name: Optional[str] = None,
+        customer_email: Optional[str] = None,
+        property_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        inquiry_type: str = "general",
+        message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            return None
+        payload = {
+            "customer_phone": customer_phone,
+            "customer_name": customer_name,
+            "customer_email": customer_email,
+            "property_id": property_id,
+            "agent_id": agent_id,
+            "inquiry_type": inquiry_type,
+            "message": message,
+            "metadata": metadata or {},
+        }
+
+        def _insert():
+            res = self.client.table("property_inquiries").insert(payload).execute()
+            return res.data[0] if res.data else None
+
+        try:
+            return await self._run_sync(_insert)
+        except Exception as exc:
+            logger.warning("record_property_inquiry failed: {}", exc)
+            return None
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Scheduled Viewings / Appointments

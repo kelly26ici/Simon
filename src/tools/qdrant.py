@@ -94,7 +94,12 @@ async def make_collection(collection_name: str) -> bool:
             ("city", PayloadSchemaType.KEYWORD),
             ("location", PayloadSchemaType.KEYWORD),
             ("property_type", PayloadSchemaType.KEYWORD),
+            ("property_subtype", PayloadSchemaType.KEYWORD),
+            ("price_period", PayloadSchemaType.KEYWORD),
             ("listing_type", PayloadSchemaType.KEYWORD),
+            ("town", PayloadSchemaType.KEYWORD),
+            ("country", PayloadSchemaType.KEYWORD),
+            ("agent_id", PayloadSchemaType.KEYWORD),
             ("status", PayloadSchemaType.KEYWORD),
         ]:
             try:

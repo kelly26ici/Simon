@@ -11,6 +11,30 @@ from loguru import logger
 from src.tools.registry import registry
 from src.services.db import db
 
+DEFAULT_AGENT_NAME = "Simon | Realtors Round Tables"
+DEFAULT_AGENT_PHONE = "0701454854"
+
+
+def _agent_display_name(agent: Optional[Dict[str, Any]]) -> str:
+	"""Human-readable agent name from a normalized agent row (or empty string)."""
+	if not agent:
+		return ""
+	return " ".join(p for p in [agent.get("first_name"), agent.get("last_name")] if p)
+
+
+def _wa_link(phone: str) -> str:
+	"""Build a clickable WhatsApp link from a phone number string."""
+	if not phone:
+		return f"https://wa.me/254701454854"
+	digits = "".join(ch for ch in phone if ch.isdigit())
+	if digits.startswith("254") and len(digits) == 12:
+		pass
+	elif digits.startswith("0") and len(digits) == 10:
+		digits = "254" + digits[1:]
+	elif len(digits) == 9 and digits.startswith("7"):
+		digits = "254" + digits
+	return f"https://wa.me/{digits}"
+
 
 class ScheduleViewingSchema(BaseModel):
     """Input for schedule_property_viewing tool."""
@@ -98,10 +122,19 @@ async def schedule_property_viewing(payload: ScheduleViewingSchema) -> Dict[str,
             {"preferred_name": payload.customer_name},
         )
 
-    agent_name = prop.get("agent_name", "Simon | Realtors Round Tables") if prop else "Simon | Realtors Round Tables"
-    agent_phone = prop.get("agent_phone", "0701454854") if prop else "0701454854"
-    prop_title = prop.get("title", "Selected Property") if prop else "Real Estate Consultation"
-    location = prop.get("location", "Nairobi") if prop else "Nairobi"
+    if prop:
+        agent = None
+        if prop.get("agent_id"):
+            agent = await db.get_agent(prop["agent_id"]) or None
+        name = _agent_display_name(agent) or DEFAULT_AGENT_NAME
+        phone = (agent or {}).get("phone") or DEFAULT_AGENT_PHONE
+        prop_title = prop.get("title", "Selected Property")
+        location = prop.get("location", "Nairobi")
+    else:
+        name = DEFAULT_AGENT_NAME
+        phone = DEFAULT_AGENT_PHONE
+        prop_title = "Real Estate Consultation"
+        location = "Nairobi"
 
     booking_id = viewing.get("id")
     logger.success(
@@ -121,9 +154,9 @@ async def schedule_property_viewing(payload: ScheduleViewingSchema) -> Dict[str,
         "customer_phone": payload.customer_phone,
         "customer_name": payload.customer_name,
         "assigned_agent": {
-            "name": agent_name,
-            "phone": agent_phone,
-            "whatsapp_link": f"https://wa.me/254{agent_phone.lstrip('+').lstrip('254').lstrip('0')}",
+            "name": name,
+            "phone": phone,
+            "whatsapp_link": _wa_link(phone),
         },
         "customer_service": {
             "name": "Simon",

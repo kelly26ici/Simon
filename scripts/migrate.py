@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 import os, sys
 from pathlib import Path
+from urllib.parse import urlparse, unquote
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,7 +33,7 @@ def main():
         db_pass = os.getenv("SUPABASE_DB_PASSWORD", "")
         if supabase_url and db_pass:
             ref = supabase_url.replace("https://", "").split(".")[0]
-            db_url = f"postgresql://postgres.{ref}:{db_pass}@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
+            db_url = f"postgresql://postgres.{ref}:{db_pass}@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
 
     if not db_url:
         print(
@@ -47,8 +48,26 @@ def main():
     except ImportError:
         os.system("uv add psycopg2-binary"); import psycopg2
 
-    print(f"Connecting…")
-    conn = psycopg2.connect(db_url)
+    # Connect via connection keywords (not the raw URI) so percent-encoded
+    # passwords (e.g. '#' encoded as %23) and pooler hostnames resolve reliably
+    # across psycopg2/libpq versions. This is idempotent over Run B's partial state.
+    p = urlparse(db_url)
+    db_pass = unquote(p.password or "")
+    conn_kw = dict(
+        host=p.hostname,
+        port=p.port or 5432,
+        user=p.username or "postgres",
+        password=db_pass,
+        dbname=(p.path or "/postgres").lstrip("/") or "postgres",
+        sslmode="require",
+        connect_timeout=15,
+        keepalives=1,
+    )
+    q = p.query
+    if "sslmode=" in q:
+        conn_kw["sslmode"] = q.split("sslmode=", 1)[1].split("&", 1)[0]
+    print("Connecting…")
+    conn = psycopg2.connect(**conn_kw)
     conn.autocommit = True
     with conn.cursor() as cur:
         cur.execute(sql)
